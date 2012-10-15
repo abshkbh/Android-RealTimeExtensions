@@ -846,6 +846,7 @@ asmlinkage long sys_open_by_handle_at(int mountdirfd,
 asmlinkage long sys_setns(int fd, int nstype);
 asmlinkage long sys_setns(int fd, int nstype);
 asmlinkage int sys_getProcessComputeTime(pid_t pid);
+asmlinkage int sys_setProcessBudget(pid_t pid,struct timespec budget);
 asmlinkage int sys_mycall(int num1,int num2,long long *sum);
 asmlinkage int sys_get_process_count(void);
 asmlinkage int sys_get_current_processes(char *buf,int n);

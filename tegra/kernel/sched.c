@@ -2824,12 +2824,18 @@ static void __sched_fork(struct task_struct *p)
            computation time of each task */
 	(p->compute_time).tv_sec        = 0;
 	(p->compute_time).tv_nsec       = 0;
-	
+
+        //Initializing this temp variable to zero
 	(p->exec_time).tv_sec        = 0;
         (p->exec_time).tv_nsec       = 0;
 
+	//Initializing budget time to -1
+	(p->budget_time).tv_sec        = -1;
+	(p->budget_time).tv_nsec       = -1;
 
-        INIT_LIST_HEAD(&p->se.group_node);
+
+
+	INIT_LIST_HEAD(&p->se.group_node);
 
 #ifdef CONFIG_SCHEDSTATS
 	memset(&p->se.statistics, 0, sizeof(p->se.statistics));
@@ -2847,83 +2853,83 @@ static void __sched_fork(struct task_struct *p)
  */
 void sched_fork(struct task_struct *p)
 {
-	unsigned long flags;
-	int cpu = get_cpu();
+    unsigned long flags;
+    int cpu = get_cpu();
 
-//	printk("Inside sched fork\n"); 
-	/* Here we set the execution time of
-	   our brand new task to the current timeofday. */ 
-//	gettimeofday_in_tspec( &(p->exec_time) );
-//	printk("Set time for new task\n"); 
+    //	printk("Inside sched fork\n"); 
+    /* Here we set the execution time of
+       our brand new task to the current timeofday. */ 
+    //	gettimeofday_in_tspec( &(p->exec_time) );
+    //	printk("Set time for new task\n"); 
 
-	__sched_fork(p);
-	/*
-	 * We mark the process as running here. This guarantees that
-	 * nobody will actually run it, and a signal or other external
-	 * event cannot wake it up and insert it on the runqueue either.
-	 */
-	p->state = TASK_RUNNING;
+    __sched_fork(p);
+    /*
+     * We mark the process as running here. This guarantees that
+     * nobody will actually run it, and a signal or other external
+     * event cannot wake it up and insert it on the runqueue either.
+     */
+    p->state = TASK_RUNNING;
 
-	/*
-	 * Revert to default priority/policy on fork if requested.
-	 */
-	if (unlikely(p->sched_reset_on_fork)) {
-		if (p->policy == SCHED_FIFO || p->policy == SCHED_RR) {
-			p->policy = SCHED_NORMAL;
-			p->normal_prio = p->static_prio;
-		}
+    /*
+     * Revert to default priority/policy on fork if requested.
+     */
+    if (unlikely(p->sched_reset_on_fork)) {
+	if (p->policy == SCHED_FIFO || p->policy == SCHED_RR) {
+	    p->policy = SCHED_NORMAL;
+	    p->normal_prio = p->static_prio;
+	}
 
-		if (PRIO_TO_NICE(p->static_prio) < 0) {
-			p->static_prio = NICE_TO_PRIO(0);
-			p->normal_prio = p->static_prio;
-			set_load_weight(p);
-		}
-
-		/*
-		 * We don't need the reset flag anymore after the fork. It has
-		 * fulfilled its duty:
-		 */
-		p->sched_reset_on_fork = 0;
+	if (PRIO_TO_NICE(p->static_prio) < 0) {
+	    p->static_prio = NICE_TO_PRIO(0);
+	    p->normal_prio = p->static_prio;
+	    set_load_weight(p);
 	}
 
 	/*
-	 * Make sure we do not leak PI boosting priority to the child.
+	 * We don't need the reset flag anymore after the fork. It has
+	 * fulfilled its duty:
 	 */
-	p->prio = current->normal_prio;
+	p->sched_reset_on_fork = 0;
+    }
 
-	if (!rt_prio(p->prio))
-		p->sched_class = &fair_sched_class;
+    /*
+     * Make sure we do not leak PI boosting priority to the child.
+     */
+    p->prio = current->normal_prio;
 
-	if (p->sched_class->task_fork)
-		p->sched_class->task_fork(p);
+    if (!rt_prio(p->prio))
+	p->sched_class = &fair_sched_class;
 
-	/*
-	 * The child is not yet in the pid-hash so no cgroup attach races,
-	 * and the cgroup is pinned to this child due to cgroup_fork()
-	 * is ran before sched_fork().
-	 *
-	 * Silence PROVE_RCU.
-	 */
-	raw_spin_lock_irqsave(&p->pi_lock, flags);
-	set_task_cpu(p, cpu);
-	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
+    if (p->sched_class->task_fork)
+	p->sched_class->task_fork(p);
+
+    /*
+     * The child is not yet in the pid-hash so no cgroup attach races,
+     * and the cgroup is pinned to this child due to cgroup_fork()
+     * is ran before sched_fork().
+     *
+     * Silence PROVE_RCU.
+     */
+    raw_spin_lock_irqsave(&p->pi_lock, flags);
+    set_task_cpu(p, cpu);
+    raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 
 #if defined(CONFIG_SCHEDSTATS) || defined(CONFIG_TASK_DELAY_ACCT)
-	if (likely(sched_info_on()))
-		memset(&p->sched_info, 0, sizeof(p->sched_info));
+    if (likely(sched_info_on()))
+	memset(&p->sched_info, 0, sizeof(p->sched_info));
 #endif
 #if defined(CONFIG_SMP)
-	p->on_cpu = 0;
+    p->on_cpu = 0;
 #endif
 #ifdef CONFIG_PREEMPT_COUNT
-	/* Want to start with kernel preemption disabled. */
-	task_thread_info(p)->preempt_count = 1;
+    /* Want to start with kernel preemption disabled. */
+    task_thread_info(p)->preempt_count = 1;
 #endif
 #ifdef CONFIG_SMP
-	plist_node_init(&p->pushable_tasks, MAX_PRIO);
+    plist_node_init(&p->pushable_tasks, MAX_PRIO);
 #endif
 
-	put_cpu();
+    put_cpu();
 }
 
 /*
@@ -2935,29 +2941,29 @@ void sched_fork(struct task_struct *p)
  */
 void wake_up_new_task(struct task_struct *p)
 {
-	unsigned long flags;
-	struct rq *rq;
+    unsigned long flags;
+    struct rq *rq;
 
-	raw_spin_lock_irqsave(&p->pi_lock, flags);
+    raw_spin_lock_irqsave(&p->pi_lock, flags);
 #ifdef CONFIG_SMP
-	/*
-	 * Fork balancing, do it here and not earlier because:
-	 *  - cpus_allowed can change in the fork path
-	 *  - any previously selected cpu might disappear through hotplug
-	 */
-	set_task_cpu(p, select_task_rq(p, SD_BALANCE_FORK, 0));
+    /*
+     * Fork balancing, do it here and not earlier because:
+     *  - cpus_allowed can change in the fork path
+     *  - any previously selected cpu might disappear through hotplug
+     */
+    set_task_cpu(p, select_task_rq(p, SD_BALANCE_FORK, 0));
 #endif
 
-	rq = __task_rq_lock(p);
-	activate_task(rq, p, 0);
-	p->on_rq = 1;
-	trace_sched_wakeup_new(p, true);
-	check_preempt_curr(rq, p, WF_FORK);
+    rq = __task_rq_lock(p);
+    activate_task(rq, p, 0);
+    p->on_rq = 1;
+    trace_sched_wakeup_new(p, true);
+    check_preempt_curr(rq, p, WF_FORK);
 #ifdef CONFIG_SMP
-	if (p->sched_class->task_woken)
-		p->sched_class->task_woken(rq, p);
+    if (p->sched_class->task_woken)
+	p->sched_class->task_woken(rq, p);
 #endif
-	task_rq_unlock(rq, p, &flags);
+    task_rq_unlock(rq, p, &flags);
 }
 
 #ifdef CONFIG_PREEMPT_NOTIFIERS
@@ -2968,7 +2974,7 @@ void wake_up_new_task(struct task_struct *p)
  */
 void preempt_notifier_register(struct preempt_notifier *notifier)
 {
-	hlist_add_head(&notifier->link, &current->preempt_notifiers);
+    hlist_add_head(&notifier->link, &current->preempt_notifiers);
 }
 EXPORT_SYMBOL_GPL(preempt_notifier_register);
 
@@ -2980,28 +2986,28 @@ EXPORT_SYMBOL_GPL(preempt_notifier_register);
  */
 void preempt_notifier_unregister(struct preempt_notifier *notifier)
 {
-	hlist_del(&notifier->link);
+    hlist_del(&notifier->link);
 }
 EXPORT_SYMBOL_GPL(preempt_notifier_unregister);
 
 static void fire_sched_in_preempt_notifiers(struct task_struct *curr)
 {
-	struct preempt_notifier *notifier;
-	struct hlist_node *node;
+    struct preempt_notifier *notifier;
+    struct hlist_node *node;
 
-	hlist_for_each_entry(notifier, node, &curr->preempt_notifiers, link)
-		notifier->ops->sched_in(notifier, raw_smp_processor_id());
+    hlist_for_each_entry(notifier, node, &curr->preempt_notifiers, link)
+	notifier->ops->sched_in(notifier, raw_smp_processor_id());
 }
 
-	static void
+    static void
 fire_sched_out_preempt_notifiers(struct task_struct *curr,
-		struct task_struct *next)
+	struct task_struct *next)
 {
-	struct preempt_notifier *notifier;
-	struct hlist_node *node;
+    struct preempt_notifier *notifier;
+    struct hlist_node *node;
 
-	hlist_for_each_entry(notifier, node, &curr->preempt_notifiers, link)
-		notifier->ops->sched_out(notifier, next);
+    hlist_for_each_entry(notifier, node, &curr->preempt_notifiers, link)
+	notifier->ops->sched_out(notifier, next);
 }
 
 #else /* !CONFIG_PREEMPT_NOTIFIERS */
@@ -3010,9 +3016,9 @@ static void fire_sched_in_preempt_notifiers(struct task_struct *curr)
 {
 }
 
-	static void
+    static void
 fire_sched_out_preempt_notifiers(struct task_struct *curr,
-		struct task_struct *next)
+	struct task_struct *next)
 {
 }
 
@@ -3031,16 +3037,16 @@ fire_sched_out_preempt_notifiers(struct task_struct *curr,
  * prepare_task_switch sets up locking and calls architecture specific
  * hooks.
  */
-	static inline void
+    static inline void
 prepare_task_switch(struct rq *rq, struct task_struct *prev,
-		struct task_struct *next)
+	struct task_struct *next)
 {
-	sched_info_switch(prev, next);
-	perf_event_task_sched_out(prev, next);
-	fire_sched_out_preempt_notifiers(prev, next);
-	prepare_lock_switch(rq, next);
-	prepare_arch_switch(next);
-	trace_sched_switch(prev, next);
+    sched_info_switch(prev, next);
+    perf_event_task_sched_out(prev, next);
+    fire_sched_out_preempt_notifiers(prev, next);
+    prepare_lock_switch(rq, next);
+    prepare_arch_switch(next);
+    trace_sched_switch(prev, next);
 }
 
 /**
@@ -3058,47 +3064,47 @@ prepare_task_switch(struct rq *rq, struct task_struct *prev,
  * with the lock held can cause deadlocks; see schedule() for
  * details.)
  */
-	static void finish_task_switch(struct rq *rq, struct task_struct *prev)
+    static void finish_task_switch(struct rq *rq, struct task_struct *prev)
 __releases(rq->lock)
 {
-	struct mm_struct *mm = rq->prev_mm;
-	long prev_state;
+    struct mm_struct *mm = rq->prev_mm;
+    long prev_state;
 
-	rq->prev_mm = NULL;
+    rq->prev_mm = NULL;
 
+    /*
+     * A task struct has one reference for the use as "current".
+     * If a task dies, then it sets TASK_DEAD in tsk->state and calls
+     * schedule one last time. The schedule call will never return, and
+     * the scheduled task must drop that reference.
+     * The test for TASK_DEAD must occur while the runqueue locks are
+     * still held, otherwise prev could be scheduled on another cpu, die
+     * there before we look at prev->state, and then the reference would
+     * be dropped twice.
+     *		Manfred Spraul <manfred@colorfullife.com>
+     */
+    prev_state = prev->state;
+    finish_arch_switch(prev);
+#ifdef __ARCH_WANT_INTERRUPTS_ON_CTXSW
+    local_irq_disable();
+#endif /* __ARCH_WANT_INTERRUPTS_ON_CTXSW */
+    perf_event_task_sched_in(prev, current);
+#ifdef __ARCH_WANT_INTERRUPTS_ON_CTXSW
+    local_irq_enable();
+#endif /* __ARCH_WANT_INTERRUPTS_ON_CTXSW */
+    finish_lock_switch(rq, prev);
+
+    fire_sched_in_preempt_notifiers(current);
+    if (mm)
+	mmdrop(mm);
+    if (unlikely(prev_state == TASK_DEAD)) {
 	/*
-	 * A task struct has one reference for the use as "current".
-	 * If a task dies, then it sets TASK_DEAD in tsk->state and calls
-	 * schedule one last time. The schedule call will never return, and
-	 * the scheduled task must drop that reference.
-	 * The test for TASK_DEAD must occur while the runqueue locks are
-	 * still held, otherwise prev could be scheduled on another cpu, die
-	 * there before we look at prev->state, and then the reference would
-	 * be dropped twice.
-	 *		Manfred Spraul <manfred@colorfullife.com>
+	 * Remove function-return probe instances associated with this
+	 * task and put them back on the free list.
 	 */
-	prev_state = prev->state;
-	finish_arch_switch(prev);
-#ifdef __ARCH_WANT_INTERRUPTS_ON_CTXSW
-	local_irq_disable();
-#endif /* __ARCH_WANT_INTERRUPTS_ON_CTXSW */
-	perf_event_task_sched_in(prev, current);
-#ifdef __ARCH_WANT_INTERRUPTS_ON_CTXSW
-	local_irq_enable();
-#endif /* __ARCH_WANT_INTERRUPTS_ON_CTXSW */
-	finish_lock_switch(rq, prev);
-
-	fire_sched_in_preempt_notifiers(current);
-	if (mm)
-		mmdrop(mm);
-	if (unlikely(prev_state == TASK_DEAD)) {
-		/*
-		 * Remove function-return probe instances associated with this
-		 * task and put them back on the free list.
-		 */
-		kprobe_flush_task(prev);
-		put_task_struct(prev);
-	}
+	kprobe_flush_task(prev);
+	put_task_struct(prev);
+    }
 }
 
 #ifdef CONFIG_SMP
@@ -3106,23 +3112,23 @@ __releases(rq->lock)
 /* assumes rq->lock is held */
 static inline void pre_schedule(struct rq *rq, struct task_struct *prev)
 {
-	if (prev->sched_class->pre_schedule)
-		prev->sched_class->pre_schedule(rq, prev);
+    if (prev->sched_class->pre_schedule)
+	prev->sched_class->pre_schedule(rq, prev);
 }
 
 /* rq->lock is NOT held, but preemption is disabled */
 static inline void post_schedule(struct rq *rq)
 {
-	if (rq->post_schedule) {
-		unsigned long flags;
+    if (rq->post_schedule) {
+	unsigned long flags;
 
-		raw_spin_lock_irqsave(&rq->lock, flags);
-		if (rq->curr->sched_class->post_schedule)
-			rq->curr->sched_class->post_schedule(rq);
-		raw_spin_unlock_irqrestore(&rq->lock, flags);
+	raw_spin_lock_irqsave(&rq->lock, flags);
+	if (rq->curr->sched_class->post_schedule)
+	    rq->curr->sched_class->post_schedule(rq);
+	raw_spin_unlock_irqrestore(&rq->lock, flags);
 
-		rq->post_schedule = 0;
-	}
+	rq->post_schedule = 0;
+    }
 }
 
 #else
@@ -3141,25 +3147,25 @@ static inline void post_schedule(struct rq *rq)
  * schedule_tail - first thing a freshly forked thread must call.
  * @prev: the thread we just switched away from.
  */
-	asmlinkage void schedule_tail(struct task_struct *prev)
+    asmlinkage void schedule_tail(struct task_struct *prev)
 __releases(rq->lock)
 {
-	struct rq *rq = this_rq();
+    struct rq *rq = this_rq();
 
-	finish_task_switch(rq, prev);
+    finish_task_switch(rq, prev);
 
-	/*
-	 * FIXME: do we need to worry about rq being invalidated by the
-	 * task_switch?
-	 */
-	post_schedule(rq);
+    /*
+     * FIXME: do we need to worry about rq being invalidated by the
+     * task_switch?
+     */
+    post_schedule(rq);
 
 #ifdef __ARCH_WANT_UNLOCKED_CTXSW
-	/* In this case, finish_task_switch does not reenable preemption */
-	preempt_enable();
+    /* In this case, finish_task_switch does not reenable preemption */
+    preempt_enable();
 #endif
-	if (current->set_child_tid)
-		put_user(task_pid_vnr(current), current->set_child_tid);
+    if (current->set_child_tid)
+	put_user(task_pid_vnr(current), current->set_child_tid);
 }
 
 
@@ -3170,78 +3176,78 @@ __releases(rq->lock)
  * context_switch - switch to the new MM and the new
  * thread's register state.
  */
-	static inline void
+    static inline void
 context_switch(struct rq *rq, struct task_struct *prev,
-		struct task_struct *next)
+	struct task_struct *next)
 {
-	struct mm_struct *mm, *oldmm;
-//        struct timespec t1;
-//	struct timespec diff;
+    struct mm_struct *mm, *oldmm;
+    //        struct timespec t1;
+    //	struct timespec diff;
 
-	/*Getting the current time in order to compute exec time of prev
-	  task being swapped out*/
-//	gettimeofday_in_tspec( &(t1) );
-//	getrawmonotonic( &(t1) );
+    /*Getting the current time in order to compute exec time of prev
+      task being swapped out*/
+    //	gettimeofday_in_tspec( &(t1) );
+    //	getrawmonotonic( &(t1) );
 
-	/*Getting the difference of current time and swap in time for prev task*/
-//	diff = timespec_sub (t1 , prev->exec_time);
-	//	printk("Prev pid is %d with current compute time is %ld secs and %ld nsecs\n",prev->pid,(prev->compute_time).tv_sec,(prev->compute_time).tv_nsec); 
-	//	printk("Prev pid is %d to which adding is %ld secs and %ld nsecs\n",prev->pid ,diff.tv_sec,diff.tv_nsec);
+    /*Getting the difference of current time and swap in time for prev task*/
+    //	diff = timespec_sub (t1 , prev->exec_time);
+    //	printk("Prev pid is %d with current compute time is %ld secs and %ld nsecs\n",prev->pid,(prev->compute_time).tv_sec,(prev->compute_time).tv_nsec); 
+    //	printk("Prev pid is %d to which adding is %ld secs and %ld nsecs\n",prev->pid ,diff.tv_sec,diff.tv_nsec);
 
-	/*Adding the difference to compute time*/
-//	prev->compute_time = timespec_add(prev->compute_time , diff);
-	//	gettimeofday_in_tspec( &(next->exec_time) );
-//	getrawmonotonic( &(next->exec_time) );
-	//	printk("Next pid is %d and Exec time is %ld secs and %ld nsecs\n",next->pid ,(next->exec_time).tv_sec,(next->exec_time).tv_nsec);
-
-
-	prepare_task_switch(rq, prev, next);
+    /*Adding the difference to compute time*/
+    //	prev->compute_time = timespec_add(prev->compute_time , diff);
+    //	gettimeofday_in_tspec( &(next->exec_time) );
+    //	getrawmonotonic( &(next->exec_time) );
+    //	printk("Next pid is %d and Exec time is %ld secs and %ld nsecs\n",next->pid ,(next->exec_time).tv_sec,(next->exec_time).tv_nsec);
 
 
-	mm = next->mm;
-	oldmm = prev->active_mm;
-	/*
-	 * For paravirt, this is coupled with an exit in switch_to to
-	 * combine the page table reload and the switch backend into
-	 * one hypercall.
-	 */
-	arch_start_context_switch(prev);
+    prepare_task_switch(rq, prev, next);
 
-	if (!mm) {
-	    next->active_mm = oldmm;
-	    atomic_inc(&oldmm->mm_count);
-	    enter_lazy_tlb(oldmm, next);
-	} else
-	    switch_mm(oldmm, mm, next);
 
-	if (!prev->mm) {
-	    prev->active_mm = NULL;
-	    rq->prev_mm = oldmm;
-	}
-	/*
-	 * Since the runqueue lock will be released by the next
-	 * task (which is an invalid locking op but in the case
-	 * of the scheduler it's an obvious special-case), so we
-	 * do an early lockdep release here:
-	 */
+    mm = next->mm;
+    oldmm = prev->active_mm;
+    /*
+     * For paravirt, this is coupled with an exit in switch_to to
+     * combine the page table reload and the switch backend into
+     * one hypercall.
+     */
+    arch_start_context_switch(prev);
+
+    if (!mm) {
+	next->active_mm = oldmm;
+	atomic_inc(&oldmm->mm_count);
+	enter_lazy_tlb(oldmm, next);
+    } else
+	switch_mm(oldmm, mm, next);
+
+    if (!prev->mm) {
+	prev->active_mm = NULL;
+	rq->prev_mm = oldmm;
+    }
+    /*
+     * Since the runqueue lock will be released by the next
+     * task (which is an invalid locking op but in the case
+     * of the scheduler it's an obvious special-case), so we
+     * do an early lockdep release here:
+     */
 #ifndef __ARCH_WANT_UNLOCKED_CTXSW
-	spin_release(&rq->lock.dep_map, 1, _THIS_IP_);
+    spin_release(&rq->lock.dep_map, 1, _THIS_IP_);
 #endif
 
-	/* Here we just switch the register state and the stack. */
-	switch_to(prev, next, prev);
+    /* Here we just switch the register state and the stack. */
+    switch_to(prev, next, prev);
 
-	barrier();
-	/*
-	 * this_rq must be evaluated again because prev may have moved
-	 * CPUs since it called schedule(), thus the 'rq' on its stack
-	 * frame will be invalid.
-	 */
-	finish_task_switch(this_rq(), prev);
+    barrier();
+    /*
+     * this_rq must be evaluated again because prev may have moved
+     * CPUs since it called schedule(), thus the 'rq' on its stack
+     * frame will be invalid.
+     */
+    finish_task_switch(this_rq(), prev);
 
-	/*Setting the exec_time of next time equal to current time*/
+    /*Setting the exec_time of next time equal to current time*/
 
-	//     printk("Set time for next task task\n");
+    //     printk("Set time for next task task\n");
 
 }
 
@@ -4371,7 +4377,7 @@ need_resched:
 	//OUR FUCKUPS START HERE....
 	/*Getting the current time in order to compute exec time of prev
 	  task being swapped out*/
-        getrawmonotonic( &(t1) );
+	getrawmonotonic( &(t1) );
 
 	/*Getting the difference of current time and swap in time for prev task*/
 	diff = timespec_sub (t1 , prev->exec_time);

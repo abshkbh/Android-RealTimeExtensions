@@ -403,9 +403,10 @@
 #define __NR_sendmmsg			(__NR_SYSCALL_BASE+374)
 #define __NR_setns			(__NR_SYSCALL_BASE+375)
 #define __NR_getProcessComputeTime	(__NR_SYSCALL_BASE+376)
-#define __NR_mycall			(__NR_SYSCALL_BASE+377)
-#define __NR_get_process_count		(__NR_SYSCALL_BASE+378)
-#define __NR_get_current_processes	(__NR_SYSCALL_BASE+379)
+#define __NR_setProcessBudget	        (__NR_SYSCALL_BASE+377)
+#define __NR_mycall			(__NR_SYSCALL_BASE+378)
+#define __NR_get_process_count		(__NR_SYSCALL_BASE+379)
+#define __NR_get_current_processes	(__NR_SYSCALL_BASE+380)
 
 /*
  * The following SWIs are ARM private.
