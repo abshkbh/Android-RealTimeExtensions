@@ -73,7 +73,8 @@ typedef unsigned long sigset_t;
 #define SIGSWI		32
 
 /*Signal to indicate task exceeding budget*/
-#define SIGXCESS	33
+#define SIGXCESS	34
+
 /*
  * SA_FLAGS values:
  *
