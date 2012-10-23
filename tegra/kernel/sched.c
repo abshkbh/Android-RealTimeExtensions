@@ -4340,7 +4340,6 @@ static void __sched __schedule(void)
 	struct timespec diff; //temp variable
 	struct timespec temp; //temp variable
 	ktime_t time_remaining; //temp variable
-        struct siginfo info;
 
 need_resched:
 	preempt_disable();
@@ -4435,19 +4434,11 @@ need_resched:
 			//Check if budget time is STILL greater than compute time for the task
 			if (timespec_compare(&(next->budget_time) , &(next->compute_time)) == 1) {
 
-				printk("Budget remaining\n");
 				// FIX ME : Check if this does a deep copy
 				// If budget time > compute time set timer for (budget - compute) 
 				temp = timespec_sub(next->budget_time , next->compute_time);
 				time_remaining = timespec_to_ktime(temp);
 
-				//This if loop will block in the case when the timer is already active and will ensure the
-				//  timer has been deactive 
-				/*	printk("Trying to cancel next's timer\n");
-					if (hrtimer_cancel(&(next->budget_timer)) < 0) {
-					printk("Next = %d budget timer callback is active\n",next->pid);
-					} */
-				printk("Starting %d's new timer",next->pid);
 				printk("The time rem is %ld s and %ld nsecs\n", temp.tv_sec, temp.tv_nsec);
 
 				// Starting "next"'s budget_timer  with a value of time_remaining 
@@ -4455,28 +4446,9 @@ need_resched:
 					printk("Could not restart budget timer for task %d",next->pid);
 				}
 
-				printk("Budget timer started\n"); 
 
 			}
-
-			//In case compute time has already exceeded budget time
-			else {
-				// Sending signal to process as the budget exceeds 
-				printk("Should have sent SIGXCESS to %d\n",next->pid);
-		/*		memset(&info , 0 , sizeof(struct siginfo));
-				info.si_signo = SIGXCESS;
-				info.si_code = SI_KERNEL; //Queueuing real time signals 
-				info.si_pid = next->pid;
-				if (send_sig_info(SIGXCESS , &info , next) < 0) {
-					printk("Error sending RT signal\n");
-				} */
-
-			}     
-
-		} 
-
-
-
+		}    
 
 		context_switch(rq, prev, next); /* unlocks the rq */
 		/*

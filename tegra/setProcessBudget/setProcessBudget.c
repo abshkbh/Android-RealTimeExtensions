@@ -13,9 +13,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget) {
     struct task_struct * curr;
 
 
-    rcu_read_lock();
+    read_lock(&tasklist_lock);
     curr = (struct task_struct *) find_task_by_vpid(pid);
-    rcu_read_unlock();
+    read_unlock(&tasklist_lock);
 
     if(curr == NULL){
 	printk("Couldn't find task\n");

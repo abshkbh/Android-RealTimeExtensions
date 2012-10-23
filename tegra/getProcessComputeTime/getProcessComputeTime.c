@@ -19,7 +19,9 @@ asmlinkage int sys_getProcessComputeTime(pid_t pid) {
     }
 
     /* Finding the taks given its pid */
+    read_lock(&tasklist_lock);
     curr = (struct task_struct *)find_task_by_vpid(pid);
+    read_unlock(&tasklist_lock);
 
     /* If current task is not found then
        this Process does not exist */
