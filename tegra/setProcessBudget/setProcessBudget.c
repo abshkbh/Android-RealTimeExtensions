@@ -20,7 +20,6 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	return -EINVAL;
     }
 
-
     if (!((period.tv_sec > 0) || (period.tv_nsec > 0))) {
 	printk("Invalid time period\n");
 	return -EINVAL;
@@ -31,7 +30,6 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	return -EINVAL;
     }
 
-
     //Finding task struct given its pid
     read_lock(&tasklist_lock);
     curr = (struct task_struct *) find_task_by_vpid(pid);
@@ -40,7 +38,6 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	printk("Couldn't find task\n");
 	return -ESRCH;
     }
-
 
     //First check if a period timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.

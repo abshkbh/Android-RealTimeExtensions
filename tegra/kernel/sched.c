@@ -186,8 +186,9 @@ enum hrtimer_restart budget_timer_callback(struct hrtimer * timer) {
     struct task_struct * curr = container_of(timer, struct task_struct, budget_timer);
     printk("In budget timer callback \n");
 
+
     //Since the budget has expired we add the task to its own wait queue
-    wait_event((curr->timer_event),0);
+    //wait_event((curr->timer_event),0);
 
     return HRTIMER_NORESTART;
 
@@ -200,9 +201,16 @@ enum hrtimer_restart period_timer_callback(struct hrtimer * timer) {
 
     //Timer callback functionality for periodic timer
     printk("Time Period cback\n");
+    
+    struct task_struct * curr = container_of(timer, struct task_struct, period_timer);
+
+    (curr->compute_time).tv_sec = 0;
+    (curr->compute_time).tv_nsec = 0;
+
+    //waking up the task
+    //wake_up(&(curr->timer_event));
 
     //Restarting period and setting the timer to the period
-    struct task_struct * curr = container_of(timer, struct task_struct, period_timer);
     ktime_t current_time = ktime_get();
     ktime_t period = timespec_to_ktime(curr->time_period);
     hrtimer_forward(timer, current_time, period);

@@ -386,10 +386,11 @@
 		CALL(sys_sendmmsg)
 /* 375 */	CALL(sys_setns)
 /* 376 */	CALL(sys_getProcessComputeTime)
-/* 377 */	CALL(sys_setProcessBudget)
-/* 378 */	CALL(sys_mycall)
-/* 379 */	CALL(sys_get_process_count)
-/* 380 */	CALL(sys_get_current_processes)
+/* 377 */	CALL(sys_mycall)
+/* 378 */	CALL(sys_setProcessBudget)
+/* 379 */	CALL(sys_cancelBudget)
+/* 380 */	CALL(sys_get_process_count)
+/* 381 */	CALL(sys_get_current_processes)
 #ifndef syscalls_counted
 .equ syscalls_padding, ((NR_syscalls + 3) & ~3) - NR_syscalls
 #define syscalls_counted

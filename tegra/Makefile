@@ -510,7 +510,7 @@ init-y		:= init/
 drivers-y	:= drivers/ sound/ firmware/
 net-y		:= net/
 libs-y		:= lib/
-core-y		:= usr/ mycall/ get_process_count/ get_current_processes/ getProcessComputeTime/ setProcessBudget/
+core-y		:= usr/ mycall/ get_process_count/ get_current_processes/ getProcessComputeTime/ setProcessBudget/ cancelBudget/
 endif # KBUILD_EXTMOD
 
 ifeq ($(dot-config),1)
