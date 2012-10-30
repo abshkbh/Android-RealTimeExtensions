@@ -11,10 +11,8 @@ enum hrtimer_restart period_timer_callback(struct hrtimer * timer);
 
 asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct timespec period, int rt_prio) {
 
-
      struct task_struct * curr;
-     ktime_t period;
-
+     ktime_t p;
 
     //Error checks for input arguments
     if ((budget.tv_sec <= 0) || (budget.tv_nsec <=0 )) {
@@ -79,9 +77,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     curr->user_rt_prio = rt_prio;
 
     //Start Timer
-    period = timespec_to_ktime(time_period);
-    if(hrtimer_start(&(curr->period_timer), period, HRTIMER_MODE_REL) == 1) {	
-	printk("Could not restart budget timer for task %d",next->pid);
+    p = timespec_to_ktime(period);
+    if(hrtimer_start(&(curr->period_timer), p, HRTIMER_MODE_REL) == 1) {	
+	printk("Could not restart budget timer for task %d", pid);
     }
 
 
