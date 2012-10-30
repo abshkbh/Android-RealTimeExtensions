@@ -1570,17 +1570,27 @@ struct task_struct {
 	atomic_t ptrace_bp_refcnt;
 #endif
 
-    /* It saves the time for which this task has executed currently */
-    struct timespec compute_time;
+	/* It saves the time for which this task has executed currently */
+	struct timespec compute_time;
 
-    /* It saves the last swapped in time of the task */
-    struct timespec exec_time;
-    
-    /*It saves the buget Time for each task*/
-    struct timespec budget_time;
+	/* It saves the last swapped in time of the task */
+	struct timespec exec_time;
 
-    /* Timer to see if compute exceed budget */
-    struct hrtimer  budget_timer;
+	/*It saves the buget Time for each task*/
+	struct timespec budget_time;
+	
+        /* Timer to see if compute exceed budget */
+	struct hrtimer  budget_timer;
+
+	/*It saves the periodic Time for each task*/
+	struct timespec time_period;
+
+	/*It saves the periodic Time for each task*/
+	struct hrtimer period_timer;
+
+	/*It saves the RT prio given to user by system call */
+	int user_rt_prio;
+
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */
@@ -1658,7 +1668,7 @@ struct pid_namespace;
  * see also pid_nr() etc in include/linux/pid.h
  */
 pid_t __task_pid_nr_ns(struct task_struct *task, enum pid_type type,
-			struct pid_namespace *ns);
+		struct pid_namespace *ns);
 
 static inline pid_t task_pid_nr(struct task_struct *tsk)
 {
@@ -1666,7 +1676,7 @@ static inline pid_t task_pid_nr(struct task_struct *tsk)
 }
 
 static inline pid_t task_pid_nr_ns(struct task_struct *tsk,
-					struct pid_namespace *ns)
+		struct pid_namespace *ns)
 {
 	return __task_pid_nr_ns(tsk, PIDTYPE_PID, ns);
 }
@@ -1691,7 +1701,7 @@ static inline pid_t task_tgid_vnr(struct task_struct *tsk)
 
 
 static inline pid_t task_pgrp_nr_ns(struct task_struct *tsk,
-					struct pid_namespace *ns)
+		struct pid_namespace *ns)
 {
 	return __task_pid_nr_ns(tsk, PIDTYPE_PGID, ns);
 }
@@ -1703,7 +1713,7 @@ static inline pid_t task_pgrp_vnr(struct task_struct *tsk)
 
 
 static inline pid_t task_session_nr_ns(struct task_struct *tsk,
-					struct pid_namespace *ns)
+		struct pid_namespace *ns)
 {
 	return __task_pid_nr_ns(tsk, PIDTYPE_SID, ns);
 }
@@ -1852,10 +1862,10 @@ extern int task_free_unregister(struct notifier_block *n);
 #define JOBCTL_PENDING_MASK	(JOBCTL_STOP_PENDING | JOBCTL_TRAP_MASK)
 
 extern bool task_set_jobctl_pending(struct task_struct *task,
-				    unsigned int mask);
+		unsigned int mask);
 extern void task_clear_jobctl_trapping(struct task_struct *task);
 extern void task_clear_jobctl_pending(struct task_struct *task,
-				      unsigned int mask);
+		unsigned int mask);
 
 #ifdef CONFIG_PREEMPT_RCU
 
@@ -1886,17 +1896,17 @@ static inline void rcu_copy_process(struct task_struct *p)
 
 #ifdef CONFIG_SMP
 extern void do_set_cpus_allowed(struct task_struct *p,
-			       const struct cpumask *new_mask);
+		const struct cpumask *new_mask);
 
 extern int set_cpus_allowed_ptr(struct task_struct *p,
-				const struct cpumask *new_mask);
+		const struct cpumask *new_mask);
 #else
 static inline void do_set_cpus_allowed(struct task_struct *p,
-				      const struct cpumask *new_mask)
+		const struct cpumask *new_mask)
 {
 }
 static inline int set_cpus_allowed_ptr(struct task_struct *p,
-				       const struct cpumask *new_mask)
+		const struct cpumask *new_mask)
 {
 	if (!cpumask_test_cpu(0, new_mask))
 		return -EINVAL;
@@ -2074,9 +2084,9 @@ extern int can_nice(const struct task_struct *p, const int nice);
 extern int task_curr(const struct task_struct *p);
 extern int idle_cpu(int cpu);
 extern int sched_setscheduler(struct task_struct *, int,
-			      const struct sched_param *);
+		const struct sched_param *);
 extern int sched_setscheduler_nocheck(struct task_struct *, int,
-				      const struct sched_param *);
+		const struct sched_param *);
 extern struct task_struct *idle_task(int cpu);
 extern struct task_struct *curr_task(int cpu);
 extern void set_curr_task(int cpu, struct task_struct *p);
@@ -2145,9 +2155,9 @@ extern int wake_up_state(struct task_struct *tsk, unsigned int state);
 extern int wake_up_process(struct task_struct *tsk);
 extern void wake_up_new_task(struct task_struct *tsk);
 #ifdef CONFIG_SMP
- extern void kick_process(struct task_struct *tsk);
+extern void kick_process(struct task_struct *tsk);
 #else
- static inline void kick_process(struct task_struct *tsk) { }
+static inline void kick_process(struct task_struct *tsk) { }
 #endif
 extern void sched_fork(struct task_struct *p);
 extern void sched_dead(struct task_struct *p);
@@ -2172,7 +2182,7 @@ static inline int dequeue_signal_lock(struct task_struct *tsk, sigset_t *mask, s
 }
 
 extern void block_all_signals(int (*notifier)(void *priv), void *priv,
-			      sigset_t *mask);
+		sigset_t *mask);
 extern void unblock_all_signals(void);
 extern void release_task(struct task_struct * p);
 extern int send_sig_info(int, struct siginfo *, struct task_struct *);
@@ -2222,7 +2232,7 @@ static inline int on_sig_stack(unsigned long sp)
 static inline int sas_ss_flags(unsigned long sp)
 {
 	return (current->sas_ss_size == 0 ? SS_DISABLE
-		: on_sig_stack(sp) ? SS_ONSTACK : 0);
+			: on_sig_stack(sp) ? SS_ONSTACK : 0);
 }
 
 /*
@@ -2248,7 +2258,7 @@ extern void mm_release(struct task_struct *, struct mm_struct *);
 extern struct mm_struct *dup_mm(struct task_struct *tsk);
 
 extern int copy_thread(unsigned long, unsigned long, unsigned long,
-			struct task_struct *, struct pt_regs *);
+		struct task_struct *, struct pt_regs *);
 extern void flush_thread(void);
 extern void exit_thread(void);
 
@@ -2265,8 +2275,8 @@ extern int allow_signal(int);
 extern int disallow_signal(int);
 
 extern int do_execve(const char *,
-		     const char __user * const __user *,
-		     const char __user * const __user *, struct pt_regs *);
+		const char __user * const __user *,
+		const char __user * const __user *, struct pt_regs *);
 extern long do_fork(unsigned long, unsigned long, struct pt_regs *, unsigned long, int __user *, int __user *);
 struct task_struct *fork_idle(int);
 
@@ -2279,7 +2289,7 @@ extern unsigned long wait_task_inactive(struct task_struct *, long match_state);
 #else
 static inline void scheduler_ipi(void) { }
 static inline unsigned long wait_task_inactive(struct task_struct *p,
-					       long match_state)
+		long match_state)
 {
 	return 1;
 }
@@ -2324,7 +2334,7 @@ static inline int has_group_leader_pid(struct task_struct *p)
 	return p->pid == p->tgid;
 }
 
-static inline
+	static inline
 int same_thread_group(struct task_struct *p1, struct task_struct *p2)
 {
 	return p1->tgid == p2->tgid;
@@ -2333,7 +2343,7 @@ int same_thread_group(struct task_struct *p1, struct task_struct *p2)
 static inline struct task_struct *next_thread(const struct task_struct *p)
 {
 	return list_entry_rcu(p->thread_group.next,
-			      struct task_struct, thread_group);
+			struct task_struct, thread_group);
 }
 
 static inline int thread_group_empty(struct task_struct *p)
@@ -2342,7 +2352,7 @@ static inline int thread_group_empty(struct task_struct *p)
 }
 
 #define delay_group_leader(p) \
-		(thread_group_leader(p) && !thread_group_empty(p))
+	(thread_group_leader(p) && !thread_group_empty(p))
 
 /*
  * Protects ->fs, ->files, ->mm, ->group_info, ->comm, keyring
@@ -2365,17 +2375,17 @@ static inline void task_unlock(struct task_struct *p)
 }
 
 extern struct sighand_struct *__lock_task_sighand(struct task_struct *tsk,
-							unsigned long *flags);
+		unsigned long *flags);
 
 #define lock_task_sighand(tsk, flags)					\
-({	struct sighand_struct *__ss;					\
-	__cond_lock(&(tsk)->sighand->siglock,				\
-		    (__ss = __lock_task_sighand(tsk, flags)));		\
-	__ss;								\
-})									\
+	({	struct sighand_struct *__ss;					\
+	 __cond_lock(&(tsk)->sighand->siglock,				\
+		 (__ss = __lock_task_sighand(tsk, flags)));		\
+	 __ss;								\
+	 })									\
 
 static inline void unlock_task_sighand(struct task_struct *tsk,
-						unsigned long *flags)
+		unsigned long *flags)
 {
 	spin_unlock_irqrestore(&tsk->sighand->siglock, *flags);
 }
@@ -2534,9 +2544,9 @@ static inline int need_resched(void)
 extern int _cond_resched(void);
 
 #define cond_resched() ({			\
-	__might_sleep(__FILE__, __LINE__, 0);	\
-	_cond_resched();			\
-})
+		__might_sleep(__FILE__, __LINE__, 0);	\
+		_cond_resched();			\
+		})
 
 extern int __cond_resched_lock(spinlock_t *lock);
 
@@ -2547,16 +2557,16 @@ extern int __cond_resched_lock(spinlock_t *lock);
 #endif
 
 #define cond_resched_lock(lock) ({				\
-	__might_sleep(__FILE__, __LINE__, PREEMPT_LOCK_OFFSET);	\
-	__cond_resched_lock(lock);				\
-})
+		__might_sleep(__FILE__, __LINE__, PREEMPT_LOCK_OFFSET);	\
+		__cond_resched_lock(lock);				\
+		})
 
 extern int __cond_resched_softirq(void);
 
 #define cond_resched_softirq() ({					\
-	__might_sleep(__FILE__, __LINE__, SOFTIRQ_DISABLE_OFFSET);	\
-	__cond_resched_softirq();					\
-})
+		__might_sleep(__FILE__, __LINE__, SOFTIRQ_DISABLE_OFFSET);	\
+		__cond_resched_softirq();					\
+		})
 
 /*
  * Does a critical section need to be broken due to another
@@ -2637,17 +2647,17 @@ extern unsigned long sched_group_shares(struct task_group *tg);
 #endif
 #ifdef CONFIG_RT_GROUP_SCHED
 extern int sched_group_set_rt_runtime(struct task_group *tg,
-				      long rt_runtime_us);
+		long rt_runtime_us);
 extern long sched_group_rt_runtime(struct task_group *tg);
 extern int sched_group_set_rt_period(struct task_group *tg,
-				      long rt_period_us);
+		long rt_period_us);
 extern long sched_group_rt_period(struct task_group *tg);
 extern int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk);
 #endif
 #endif
 
 extern int task_can_switch_user(struct user_struct *up,
-					struct task_struct *tsk);
+		struct task_struct *tsk);
 
 #ifdef CONFIG_TASK_XACCT
 static inline void add_rchar(struct task_struct *tsk, ssize_t amt)
