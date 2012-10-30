@@ -184,23 +184,11 @@ static enum hrtimer_restart sched_rt_period_timer(struct hrtimer *timer)
 enum hrtimer_restart budget_timer_callback(struct hrtimer * timer) {
 
     struct task_struct * curr = container_of(timer, struct task_struct, budget_timer);
-    struct siginfo info;
-    printk("In Timer callback\n");
-    // Send signal to task for this budget timer 
-    if (curr != NULL) {
-	printk("In the hrtimer callback function for pid = %d\n",curr->pid);
-	memset(&info , 0 , sizeof(struct siginfo));
-	info.si_signo = SIGXCESS;
-	info.si_code = SI_KERNEL; //Queueuing real time signals 
-	info.si_pid = curr->pid;
-	if (send_sig_info(SIGXCESS , &info , curr) < 0) {
-	    printk("Error sending RT signal\n");
-	} 
+    printk("In budget timer callback \n");
 
-	//si_sign0 = 34 ; si_code , si_pid = curr->pid , kill_proc_i(34,/7info,curr->pid)
+    //Since the budget has expired we add the task to its own wait queue
+    wait_event((curr->timer_event),0);
 
-
-    }
     return HRTIMER_NORESTART;
 
 } 

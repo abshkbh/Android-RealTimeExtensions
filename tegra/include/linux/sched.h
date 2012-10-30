@@ -1591,6 +1591,10 @@ struct task_struct {
 	/*It saves the RT prio given to user by system call */
 	int user_rt_prio;
 
+	/*Wait queue for this task*/
+//	DECLARE_WAIT_QUEUE_HEAD(timer_event);
+	wait_queue_head_t timer_event;
+
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */

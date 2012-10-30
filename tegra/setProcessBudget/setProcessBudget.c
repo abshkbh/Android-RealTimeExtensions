@@ -70,11 +70,14 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	hrtimer_init(&(curr->budget_timer),CLOCK_MONOTONIC,HRTIMER_MODE_REL);
 	(curr->budget_timer).function = &budget_timer_callback;
     }
-//    (curr->budget_time).tv_sec = budget.tv_sec;
-//    (curr->budget_time).tv_nsec = budget.tv_nsec;
+    (curr->budget_time).tv_sec = budget.tv_sec;
+    (curr->budget_time).tv_nsec = budget.tv_nsec;
 
     //Setting user_rt_prio to priority given by user
     curr->user_rt_prio = rt_prio;
+
+    //Initaializing wait queue 
+    init_waitqueue_head(&(curr->timer_event));
 
     //Start Timer
     p = timespec_to_ktime(period);
