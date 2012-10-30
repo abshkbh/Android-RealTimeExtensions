@@ -179,46 +179,52 @@ static enum hrtimer_restart sched_rt_period_timer(struct hrtimer *timer)
     return idle ? HRTIMER_NORESTART : HRTIMER_RESTART;
 }
 
-
 //Callback function for timer restart
 enum hrtimer_restart budget_timer_callback(struct hrtimer * timer) {
 
     struct task_struct * curr = container_of(timer, struct task_struct, budget_timer);
     printk("In budget timer callback \n");
 
-
     //Since the budget has expired we add the task to its own wait queue
     //wait_event((curr->timer_event),0);
+    curr->state = TASK_INTERRUPTIBLE;
+    set_tsk_need_resched(curr);
 
     return HRTIMER_NORESTART;
 
 } 
 EXPORT_SYMBOL_GPL(budget_timer_callback);
 
-
 //Callback function for timer restart
 enum hrtimer_restart period_timer_callback(struct hrtimer * timer) {
 
+    int overrun;
+    ktime_t current_time ;
+    ktime_t period ;
     //Timer callback functionality for periodic timer
-    printk("Time Period cback\n");
-    
     struct task_struct * curr = container_of(timer, struct task_struct, period_timer);
 
+    //setting the current time to 0 basically replenishing the budget after the period
     (curr->compute_time).tv_sec = 0;
     (curr->compute_time).tv_nsec = 0;
 
     //waking up the task
     //wake_up(&(curr->timer_event));
+    wake_up_process(curr);
 
     //Restarting period and setting the timer to the period
-    ktime_t current_time = ktime_get();
-    ktime_t period = timespec_to_ktime(curr->time_period);
-    hrtimer_forward(timer, current_time, period);
+    current_time = ktime_get();
+    period = timespec_to_ktime(curr->time_period);
+    overrun = hrtimer_forward(timer, current_time, period);
+    if (overrun < 0) {
+    printk("Error restarting T\n");
+    }
+
+    printk("Time Period cback\n");
 
     return HRTIMER_RESTART;
 } 
 EXPORT_SYMBOL_GPL(period_timer_callback);
-
 
     static
 void init_rt_bandwidth(struct rt_bandwidth *rt_b, u64 period, u64 runtime)
@@ -4450,7 +4456,7 @@ need_resched:
 		temp = timespec_sub(next->budget_time , next->compute_time);
 		time_remaining = timespec_to_ktime(temp);
 
-		printk("The time rem is %ld s and %ld nsecs\n", temp.tv_sec, temp.tv_nsec);
+		printk("RemT is %ld s and %ld ns \n", temp.tv_sec, temp.tv_nsec);
 
 		// Starting "next"'s budget_timer  with a value of time_remaining 
 		if(hrtimer_start(&(next->budget_timer), time_remaining, HRTIMER_MODE_REL) == 1) {	
