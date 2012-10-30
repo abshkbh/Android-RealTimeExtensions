@@ -26,182 +26,182 @@
  *              Thomas Gleixner, Mike Kravetz
  */
 
-	#include <linux/mm.h>
-	#include <linux/module.h>
-	#include <linux/nmi.h>
-	#include <linux/init.h>
-	#include <linux/uaccess.h>
-	#include <linux/highmem.h>
-	#include <asm/mmu_context.h>
-	#include <linux/interrupt.h>
-	#include <linux/capability.h>
-	#include <linux/completion.h>
-	#include <linux/kernel_stat.h>
-	#include <linux/debug_locks.h>
-	#include <linux/perf_event.h>
-	#include <linux/security.h>
-	#include <linux/notifier.h>
-	#include <linux/profile.h>
-	#include <linux/freezer.h>
-	#include <linux/vmalloc.h>
-	#include <linux/blkdev.h>
-	#include <linux/delay.h>
-	#include <linux/pid_namespace.h>
-	#include <linux/smp.h>
-	#include <linux/threads.h>
-	#include <linux/timer.h>
-	#include <linux/rcupdate.h>
-	#include <linux/cpu.h>
-	#include <linux/cpuset.h>
-	#include <linux/percpu.h>
-	#include <linux/proc_fs.h>
-	#include <linux/seq_file.h>
-	#include <linux/stop_machine.h>
-	#include <linux/sysctl.h>
-	#include <linux/syscalls.h>
-	#include <linux/times.h>
-	#include <linux/tsacct_kern.h>
-	#include <linux/kprobes.h>
-	#include <linux/delayacct.h>
-	#include <linux/unistd.h>
-	#include <linux/pagemap.h>
-	#include <linux/hrtimer.h>
-	#include <linux/tick.h>
-	#include <linux/debugfs.h>
-	#include <linux/ctype.h>
-	#include <linux/ftrace.h>
-	#include <linux/slab.h>
-	#include <linux/cpuacct.h>
+#include <linux/mm.h>
+#include <linux/module.h>
+#include <linux/nmi.h>
+#include <linux/init.h>
+#include <linux/uaccess.h>
+#include <linux/highmem.h>
+#include <asm/mmu_context.h>
+#include <linux/interrupt.h>
+#include <linux/capability.h>
+#include <linux/completion.h>
+#include <linux/kernel_stat.h>
+#include <linux/debug_locks.h>
+#include <linux/perf_event.h>
+#include <linux/security.h>
+#include <linux/notifier.h>
+#include <linux/profile.h>
+#include <linux/freezer.h>
+#include <linux/vmalloc.h>
+#include <linux/blkdev.h>
+#include <linux/delay.h>
+#include <linux/pid_namespace.h>
+#include <linux/smp.h>
+#include <linux/threads.h>
+#include <linux/timer.h>
+#include <linux/rcupdate.h>
+#include <linux/cpu.h>
+#include <linux/cpuset.h>
+#include <linux/percpu.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+#include <linux/stop_machine.h>
+#include <linux/sysctl.h>
+#include <linux/syscalls.h>
+#include <linux/times.h>
+#include <linux/tsacct_kern.h>
+#include <linux/kprobes.h>
+#include <linux/delayacct.h>
+#include <linux/unistd.h>
+#include <linux/pagemap.h>
+#include <linux/hrtimer.h>
+#include <linux/tick.h>
+#include <linux/debugfs.h>
+#include <linux/ctype.h>
+#include <linux/ftrace.h>
+#include <linux/slab.h>
+#include <linux/cpuacct.h>
 
-	#include <asm/tlb.h>
-	#include <asm/irq_regs.h>
-	#include <asm/mutex.h>
-	#ifdef CONFIG_PARAVIRT
-	#include <asm/paravirt.h>
-	#endif
+#include <asm/tlb.h>
+#include <asm/irq_regs.h>
+#include <asm/mutex.h>
+#ifdef CONFIG_PARAVIRT
+#include <asm/paravirt.h>
+#endif
 
-	#include "sched_cpupri.h"
-	#include "workqueue_sched.h"
-	#include "sched_autogroup.h"
+#include "sched_cpupri.h"
+#include "workqueue_sched.h"
+#include "sched_autogroup.h"
 
-	#define CREATE_TRACE_POINTS
-	#include <trace/events/sched.h>
+#define CREATE_TRACE_POINTS
+#include <trace/events/sched.h>
 
-	/*
-	 * Convert user-nice values [ -20 ... 0 ... 19 ]
-	 * to static priority [ MAX_RT_PRIO..MAX_PRIO-1 ],
-	 * and back.
-	 */
-	#define NICE_TO_PRIO(nice)	(MAX_RT_PRIO + (nice) + 20)
-	#define PRIO_TO_NICE(prio)	((prio) - MAX_RT_PRIO - 20)
-	#define TASK_NICE(p)		PRIO_TO_NICE((p)->static_prio)
+/*
+ * Convert user-nice values [ -20 ... 0 ... 19 ]
+ * to static priority [ MAX_RT_PRIO..MAX_PRIO-1 ],
+ * and back.
+ */
+#define NICE_TO_PRIO(nice)	(MAX_RT_PRIO + (nice) + 20)
+#define PRIO_TO_NICE(prio)	((prio) - MAX_RT_PRIO - 20)
+#define TASK_NICE(p)		PRIO_TO_NICE((p)->static_prio)
 
-	/*
-	 * 'User priority' is the nice value converted to something we
-	 * can work with better when scaling various scheduler parameters,
-	 * it's a [ 0 ... 39 ] range.
-	 */
-	#define USER_PRIO(p)		((p)-MAX_RT_PRIO)
-	#define TASK_USER_PRIO(p)	USER_PRIO((p)->static_prio)
-	#define MAX_USER_PRIO		(USER_PRIO(MAX_PRIO))
+/*
+ * 'User priority' is the nice value converted to something we
+ * can work with better when scaling various scheduler parameters,
+ * it's a [ 0 ... 39 ] range.
+ */
+#define USER_PRIO(p)		((p)-MAX_RT_PRIO)
+#define TASK_USER_PRIO(p)	USER_PRIO((p)->static_prio)
+#define MAX_USER_PRIO		(USER_PRIO(MAX_PRIO))
 
-	/*
-	 * Helpers for converting nanosecond timing to jiffy resolution
-	 */
-	#define NS_TO_JIFFIES(TIME)	((unsigned long)(TIME) / (NSEC_PER_SEC / HZ))
+/*
+ * Helpers for converting nanosecond timing to jiffy resolution
+ */
+#define NS_TO_JIFFIES(TIME)	((unsigned long)(TIME) / (NSEC_PER_SEC / HZ))
 
-	#define NICE_0_LOAD		SCHED_LOAD_SCALE
-	#define NICE_0_SHIFT		SCHED_LOAD_SHIFT
+#define NICE_0_LOAD		SCHED_LOAD_SCALE
+#define NICE_0_SHIFT		SCHED_LOAD_SHIFT
 
-	/*
-	 * These are the 'tuning knobs' of the scheduler:
-	 *
-	 * default timeslice is 100 msecs (used only for SCHED_RR tasks).
-	 * Timeslices get refilled after they expire.
-	 */
-	#define DEF_TIMESLICE		(100 * HZ / 1000)
+/*
+ * These are the 'tuning knobs' of the scheduler:
+ *
+ * default timeslice is 100 msecs (used only for SCHED_RR tasks).
+ * Timeslices get refilled after they expire.
+ */
+#define DEF_TIMESLICE		(100 * HZ / 1000)
 
-	/*
-	 * single value that denotes runtime == period, ie unlimited time.
-	 */
-	#define RUNTIME_INF	((u64)~0ULL)
+/*
+ * single value that denotes runtime == period, ie unlimited time.
+ */
+#define RUNTIME_INF	((u64)~0ULL)
 
-	static inline int rt_policy(int policy)
-	{
-	    if (policy == SCHED_FIFO || policy == SCHED_RR)
-		return 1;
-	    return 0;
-	}
+static inline int rt_policy(int policy)
+{
+    if (policy == SCHED_FIFO || policy == SCHED_RR)
+	return 1;
+    return 0;
+}
 
-	static inline int task_has_rt_policy(struct task_struct *p)
-	{
-	    return rt_policy(p->policy);
-	}
+static inline int task_has_rt_policy(struct task_struct *p)
+{
+    return rt_policy(p->policy);
+}
 
-	/*
-	 * This is the priority-queue data structure of the RT scheduling class:
-	 */
-	struct rt_prio_array {
-	    DECLARE_BITMAP(bitmap, MAX_RT_PRIO+1); /* include 1 bit for delimiter */
-	    struct list_head queue[MAX_RT_PRIO];
-	};
+/*
+ * This is the priority-queue data structure of the RT scheduling class:
+ */
+struct rt_prio_array {
+    DECLARE_BITMAP(bitmap, MAX_RT_PRIO+1); /* include 1 bit for delimiter */
+    struct list_head queue[MAX_RT_PRIO];
+};
 
-	struct rt_bandwidth {
-	    /* nests inside the rq lock: */
-	    raw_spinlock_t		rt_runtime_lock;
-	    ktime_t			rt_period;
-	    u64			rt_runtime;
-	    struct hrtimer		rt_period_timer;
-	};
+struct rt_bandwidth {
+    /* nests inside the rq lock: */
+    raw_spinlock_t		rt_runtime_lock;
+    ktime_t			rt_period;
+    u64			rt_runtime;
+    struct hrtimer		rt_period_timer;
+};
 
-	static struct rt_bandwidth def_rt_bandwidth;
+static struct rt_bandwidth def_rt_bandwidth;
 
-	static int do_sched_rt_period_timer(struct rt_bandwidth *rt_b, int overrun);
+static int do_sched_rt_period_timer(struct rt_bandwidth *rt_b, int overrun);
 
-	static enum hrtimer_restart sched_rt_period_timer(struct hrtimer *timer)
-	{
-	    struct rt_bandwidth *rt_b =
-		container_of(timer, struct rt_bandwidth, rt_period_timer);
-	    ktime_t now;
-	    int overrun;
-	    int idle = 0;
+static enum hrtimer_restart sched_rt_period_timer(struct hrtimer *timer)
+{
+    struct rt_bandwidth *rt_b =
+	container_of(timer, struct rt_bandwidth, rt_period_timer);
+    ktime_t now;
+    int overrun;
+    int idle = 0;
 
-	    for (;;) {
-		now = hrtimer_cb_get_time(timer);
-		overrun = hrtimer_forward(timer, now, rt_b->rt_period);
+    for (;;) {
+	now = hrtimer_cb_get_time(timer);
+	overrun = hrtimer_forward(timer, now, rt_b->rt_period);
 
-		if (!overrun)
-		    break;
+	if (!overrun)
+	    break;
 
-		idle = do_sched_rt_period_timer(rt_b, overrun);
-	    }
+	idle = do_sched_rt_period_timer(rt_b, overrun);
+    }
 
-	    return idle ? HRTIMER_NORESTART : HRTIMER_RESTART;
-	}
+    return idle ? HRTIMER_NORESTART : HRTIMER_RESTART;
+}
 
 
 //Callback function for timer restart
 enum hrtimer_restart budget_timer_callback(struct hrtimer * timer) {
 
-	struct task_struct * curr = container_of(timer, struct task_struct, budget_timer);
-	struct siginfo info;
-	printk("In Timer callback\n");
-	// Send signal to task for this budget timer 
-	if (curr != NULL) {
-		printk("In the hrtimer callback function for pid = %d\n",curr->pid);
-		memset(&info , 0 , sizeof(struct siginfo));
-		info.si_signo = SIGXCESS;
-		info.si_code = SI_KERNEL; //Queueuing real time signals 
-		info.si_pid = curr->pid;
-		if (send_sig_info(SIGXCESS , &info , curr) < 0) {
-			printk("Error sending RT signal\n");
-		} 
+    struct task_struct * curr = container_of(timer, struct task_struct, budget_timer);
+    struct siginfo info;
+    printk("In Timer callback\n");
+    // Send signal to task for this budget timer 
+    if (curr != NULL) {
+	printk("In the hrtimer callback function for pid = %d\n",curr->pid);
+	memset(&info , 0 , sizeof(struct siginfo));
+	info.si_signo = SIGXCESS;
+	info.si_code = SI_KERNEL; //Queueuing real time signals 
+	info.si_pid = curr->pid;
+	if (send_sig_info(SIGXCESS , &info , curr) < 0) {
+	    printk("Error sending RT signal\n");
+	} 
 
-		//si_sign0 = 34 ; si_code , si_pid = curr->pid , kill_proc_i(34,/7info,curr->pid)
+	//si_sign0 = 34 ; si_code , si_pid = curr->pid , kill_proc_i(34,/7info,curr->pid)
 
 
-	}
-	return HRTIMER_NORESTART;
+    }
+    return HRTIMER_NORESTART;
 
 } 
 EXPORT_SYMBOL_GPL(budget_timer_callback);
@@ -210,8 +210,15 @@ EXPORT_SYMBOL_GPL(budget_timer_callback);
 //Callback function for timer restart
 enum hrtimer_restart period_timer_callback(struct hrtimer * timer) {
 
-//Timer callback functionality for periodic timer
+    //Timer callback functionality for periodic timer
     printk("Time Period cback\n");
+
+    //Restarting period and setting the timer to the period
+    struct task_struct * curr = container_of(timer, struct task_struct, period_timer);
+    ktime_t current_time = ktime_get();
+    ktime_t period = timespec_to_ktime(curr->time_period);
+    hrtimer_forward(timer, current_time, period);
+
     return HRTIMER_RESTART;
 } 
 EXPORT_SYMBOL_GPL(period_timer_callback);

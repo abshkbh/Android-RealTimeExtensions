@@ -11,22 +11,22 @@ enum hrtimer_restart period_timer_callback(struct hrtimer * timer);
 
 asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct timespec period, int rt_prio) {
 
-     struct task_struct * curr;
-     ktime_t p;
+    struct task_struct * curr;
+    ktime_t p;
 
     //Error checks for input arguments
-    if ((budget.tv_sec <= 0) || (budget.tv_nsec <=0 )) {
+    if (!((budget.tv_sec > 0) || (budget.tv_nsec > 0))) {
 	printk("Invalid budget time\n");
 	return -EINVAL;
     }
 
 
-    if ((period.tv_sec <= 0) || (period.tv_nsec <=0 )) {
+    if (!((period.tv_sec > 0) || (period.tv_nsec > 0))) {
 	printk("Invalid time period\n");
 	return -EINVAL;
     }
 
-    if (pid < 0) {
+    if (pid <= 0) {
 	printk("Invalid PID\n");
 	return -EINVAL;
     }
@@ -70,8 +70,8 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	hrtimer_init(&(curr->budget_timer),CLOCK_MONOTONIC,HRTIMER_MODE_REL);
 	(curr->budget_timer).function = &budget_timer_callback;
     }
-    (curr->budget_time).tv_sec = budget.tv_sec;
-    (curr->budget_time).tv_nsec = budget.tv_nsec;
+//    (curr->budget_time).tv_sec = budget.tv_sec;
+//    (curr->budget_time).tv_nsec = budget.tv_nsec;
 
     //Setting user_rt_prio to priority given by user
     curr->user_rt_prio = rt_prio;
@@ -82,11 +82,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	printk("Could not restart budget timer for task %d", pid);
     }
 
-
-    printk("Budget for task %d set to time = %ld secs  %ld nsecs \n",pid,(curr->budget_time).tv_sec,(curr->budget_time).tv_nsec);
-    printk("Period for task %d set to time = %ld secs  %ld nsecs \n",pid,(curr->time_period).tv_sec,(curr->time_period).tv_nsec);
     printk("User RT Prio for task %d is %d",pid,curr->user_rt_prio);
-
 
     return 0;
 }

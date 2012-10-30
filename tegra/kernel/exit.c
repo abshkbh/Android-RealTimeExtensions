@@ -1188,6 +1188,12 @@ static int wait_noreap_copyout(struct wait_opts *wo, struct task_struct *p,
  */
 static int wait_task_zombie(struct wait_opts *wo, struct task_struct *p)
 {
+
+	//Cancelling the timer
+	if((p->time_period).tv_sec > 0 || (p->time_period).tv_nsec > 0){
+	    hrtimer_cancel(&(p->period_timer));
+	}
+
 	unsigned long state;
 	int retval, status, traced;
 	pid_t pid = task_pid_vnr(p);
