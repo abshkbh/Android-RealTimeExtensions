@@ -30,6 +30,11 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	return -EINVAL;
     }
 
+    if(timespec_compare(&budget, &period) != -1){
+	printk("Budget >= Period\n");
+	return -EINVAL;
+    }
+
     //Finding task struct given its pid
     read_lock(&tasklist_lock);
     curr = (struct task_struct *) find_task_by_vpid(pid);
@@ -41,7 +46,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 
     //First check if a period timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.
-    // If this syscall returns 0 or 1 then timer is succesfully cancelled  
+    //If this syscall returns 0 or 1 then timer is succesfully cancelled  
     if (((curr -> time_period).tv_sec > 0) || ((curr -> time_period).tv_nsec > 0)) {
 	hrtimer_cancel(&(curr->period_timer));
     }
@@ -53,7 +58,6 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     }
     (curr->time_period).tv_sec = period.tv_sec;
     (curr->time_period).tv_nsec = period.tv_nsec;
-
 
     //First check if a budget timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.
@@ -72,9 +76,6 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 
     //Setting user_rt_prio to priority given by user
     curr->user_rt_prio = rt_prio;
-
-    //Initaializing wait queue 
-    init_waitqueue_head(&(curr->timer_event));
 
     //Start Timer
     p = timespec_to_ktime(period);

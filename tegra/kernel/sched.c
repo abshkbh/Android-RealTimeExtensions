@@ -186,8 +186,10 @@ enum hrtimer_restart budget_timer_callback(struct hrtimer * timer) {
     printk("In budget timer callback \n");
 
     //Since the budget has expired we add the task to its own wait queue
-    curr->state = TASK_UNINTERRUPTIBLE;
+    //curr->state = TASK_INTERRUPTIBLE;
+    set_task_state(curr, TASK_UNINTERRUPTIBLE);
     set_tsk_need_resched(curr);
+    //schedule();
 
     return HRTIMER_NORESTART;
 
@@ -207,17 +209,17 @@ enum hrtimer_restart period_timer_callback(struct hrtimer * timer) {
     (curr->compute_time).tv_sec = 0;
     (curr->compute_time).tv_nsec = 0;
 
-    //waking up the task
-    //wake_up(&(curr->timer_event));
-    wake_up_process(curr);
-
     //Restarting period and setting the timer to the period
     current_time = ktime_get();
     period = timespec_to_ktime(curr->time_period);
     overrun = hrtimer_forward(timer, current_time, period);
     if (overrun < 0) {
-    printk("Error restarting T\n");
+	printk("Error restarting T\n");
     }
+    
+    //waking up the task
+    clear_tsk_need_resched(curr);
+    wake_up_process(curr);
 
     printk("Time Period cback\n");
 

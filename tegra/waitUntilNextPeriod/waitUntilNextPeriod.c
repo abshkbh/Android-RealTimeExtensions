@@ -6,7 +6,7 @@
 #include <linux/time.h>
 #include <asm/uaccess.h>
 
-asmlinkage int sys_setProcessBudget(pid_t pid) {
+asmlinkage int sys_waitUntilNextPeriod(pid_t pid) {
 
     struct task_struct * curr;
    
@@ -25,8 +25,10 @@ asmlinkage int sys_setProcessBudget(pid_t pid) {
     }
 
     //Putting task to sleep
-    curr->state = TASK_UNINTERRUPTIBLE;
+    //curr->state = TASK_INTERRUPTIBLE;
+    set_task_state(curr, TASK_UNINTERRUPTIBLE);
     set_tsk_need_resched(curr);
+    schedule();
     
     //Setting compute time to Budget time just 
     //for safety in case it ever comes in run queue
