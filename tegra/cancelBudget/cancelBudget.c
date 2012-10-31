@@ -47,7 +47,12 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
     (curr->budget_time).tv_sec = -1;
     (curr->budget_time).tv_nsec = -1;
 
-    printk("Budet cancelled\n");
+    //Waking up the process in case if it was sleeping
+    if(!wake_up_process(curr)){
+	printk("Process already running\n");
+    }
+
+    printk("Budget cancelled\n");
 
     return 0;
 }
