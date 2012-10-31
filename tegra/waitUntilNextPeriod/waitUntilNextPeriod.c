@@ -25,10 +25,9 @@ asmlinkage int sys_waitUntilNextPeriod(pid_t pid) {
     }
 
     //Putting task to sleep
-    //curr->state = TASK_INTERRUPTIBLE;
     set_task_state(curr, TASK_UNINTERRUPTIBLE);
     set_tsk_need_resched(curr);
-    schedule();
+    schedule(); //BIG DEBATE ??
     
     //Setting compute time to Budget time just 
     //for safety in case it ever comes in run queue
