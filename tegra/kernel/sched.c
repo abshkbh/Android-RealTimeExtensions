@@ -186,7 +186,6 @@ enum hrtimer_restart budget_timer_callback(struct hrtimer * timer) {
     printk("In budget timer callback \n");
 
     //Since the budget has expired we add the task to its own wait queue
-    //wait_event((curr->timer_event),0);
     curr->state = TASK_UNINTERRUPTIBLE;
     set_tsk_need_resched(curr);
 
