@@ -83,7 +83,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	printk("Could not restart budget timer for task %d", pid);
     }
 
-    printk("User RT Prio for task %d is %d",pid,curr->user_rt_prio);
+    printk("User RT Prio for task %d is %d\n",pid,curr->user_rt_prio);
 
     return 0;
 }
