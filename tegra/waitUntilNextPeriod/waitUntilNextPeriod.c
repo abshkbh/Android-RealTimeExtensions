@@ -24,6 +24,12 @@ asmlinkage int sys_waitUntilNextPeriod(pid_t pid) {
 	return -ESRCH;
     }
 
+    //If the budget is not set then just returning it.
+    if((curr->budget_time).tv_sec == -1 && (curr->budget_time).tv_nsec == -1){
+	printk("No budget set to wait\n");
+	return -EINVAL;
+    }
+
     //Putting task to sleep
     set_task_state(curr, TASK_UNINTERRUPTIBLE);
     set_tsk_need_resched(curr);
