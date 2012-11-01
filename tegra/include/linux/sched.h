@@ -1588,8 +1588,6 @@ struct task_struct {
 	/*It saves the periodic Time for each task*/
 	struct hrtimer period_timer;
 
-	/*It saves the RT prio given to user by system call */
-	int user_rt_prio;
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */

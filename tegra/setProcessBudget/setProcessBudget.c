@@ -30,6 +30,12 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	return -EINVAL;
     }
 
+    if ((rt_prio < 0) || (rt_prio >= MAX_RT_PRIO)){
+        printk("RT Prio not in range\n");
+	return -EINVAL;
+     }
+
+
     if(timespec_compare(&budget, &period) != -1){
 	printk("Budget >= Period\n");
 	return -EINVAL;
@@ -75,7 +81,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     (curr->budget_time).tv_nsec = budget.tv_nsec;
 
     //Setting user_rt_prio to priority given by user
-    curr->user_rt_prio = rt_prio;
+    curr->rt_priority = rt_prio;
 
     //Start Timer
     p = timespec_to_ktime(period);
@@ -83,7 +89,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	printk("Could not restart budget timer for task %d", pid);
     }
 
-    printk("User RT Prio for task %d is %d\n",pid,curr->user_rt_prio);
+    printk("User RT Prio for task %d is %d\n",pid,curr->rt_priority);
 
     return 0;
 }
