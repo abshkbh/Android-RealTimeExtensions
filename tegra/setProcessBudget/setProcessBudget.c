@@ -14,6 +14,17 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     struct task_struct * curr;
     ktime_t p;
 
+    //Error check for seeing if budget & period specs are safe to read
+    if (!access_ok(VERIFY_READ , &budget , sizeof(struct timespec))) {
+       printk("Unsafe budget memory area\n");
+       return -EFAULT;
+    }
+    if (!access_ok(VERIFY_READ , &period , sizeof(struct timespec))) {
+       printk("Unsafe period memory area\n");
+	return -EFAULT;
+    }
+
+
     //Error checks for input arguments
     if (!((budget.tv_sec > 0) || (budget.tv_nsec > 0))) {
 	printk("Invalid budget time\n");
@@ -31,9 +42,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     }
 
     if ((rt_prio < 0) || (rt_prio >= MAX_RT_PRIO)){
-        printk("RT Prio not in range\n");
+	printk("RT Prio not in range\n");
 	return -EINVAL;
-     }
+    }
 
 
     if(timespec_compare(&budget, &period) != -1){
