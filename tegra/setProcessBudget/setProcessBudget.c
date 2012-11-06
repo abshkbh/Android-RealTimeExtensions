@@ -13,16 +13,17 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 
     struct task_struct * curr;
     ktime_t p;
+    struct sched_param rt_sched_parameters;
 
     //Error check for seeing if budget & period specs are safe to read
-    if (!access_ok(VERIFY_READ , &budget , sizeof(struct timespec))) {
+/*    if (!access_ok(VERIFY_READ , &budget , sizeof(struct timespec))) {
        printk("Unsafe budget memory area\n");
        return -EFAULT;
-    }
+    } 
     if (!access_ok(VERIFY_READ , &period , sizeof(struct timespec))) {
        printk("Unsafe period memory area\n");
 	return -EFAULT;
-    }
+    } */
 
 
     //Error checks for input arguments
@@ -73,8 +74,13 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	hrtimer_init(&(curr->period_timer),CLOCK_MONOTONIC,HRTIMER_MODE_REL);
 	(curr->period_timer).function = &period_timer_callback;
     }
-    (curr->time_period).tv_sec = period.tv_sec;
-    (curr->time_period).tv_nsec = period.tv_nsec;
+   // (curr->time_period).tv_sec = period.tv_sec;
+   // (curr->time_period).tv_nsec = period.tv_nsec;
+   if (copy_from_user(&(curr->time_period), &period,sizeof(struct timespec)) !=0) {
+         printk("Couldn't copy period from user\n");
+	 return -EFAULT;
+      }
+
 
     //First check if a budget timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.
@@ -88,11 +94,18 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	hrtimer_init(&(curr->budget_timer),CLOCK_MONOTONIC,HRTIMER_MODE_REL);
 	(curr->budget_timer).function = &budget_timer_callback;
     }
-    (curr->budget_time).tv_sec = budget.tv_sec;
-    (curr->budget_time).tv_nsec = budget.tv_nsec;
+  //  (curr->budget_time).tv_sec = budget.tv_sec;
+  //  (curr->budget_time).tv_nsec = budget.tv_nsec;
+    if (copy_from_user(&(curr->budget_time), &budget,sizeof(struct timespec)) !=0) {
+	printk("Couldn't copy budget from user\n");
+	return -EFAULT;
+    }
 
-    //Setting user_rt_prio to priority given by user
+    //Setting user_rt_prio to priority given by user and
+    //sched policy to SCHED_FIFO
     curr->rt_priority = rt_prio;
+    rt_sched_parameters.sched_priority = rt_prio;
+    sched_setscheduler(curr,SCHED_FIFO,&rt_sched_parameters);
 
     //Start Timer
     p = timespec_to_ktime(period);
