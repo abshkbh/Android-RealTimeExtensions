@@ -9,7 +9,6 @@
 #include <linux/errno.h>
 #include <asm/uaccess.h>
 
-//extern int errno;
 
 enum hrtimer_restart budget_timer_callback(struct hrtimer * timer);
 enum hrtimer_restart period_timer_callback(struct hrtimer * timer);
@@ -27,6 +26,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     struct cpumask cpuset;
     cpumask_clear(&cpuset);
     cpumask_set_cpu(0, &cpuset);
+
+
+
 
    //   spinlock_t mr_lock = SPIN_LOCK_UNLOCKED;
     //   unsigned long flags;
@@ -78,6 +80,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	printk("Couldn't find task\n");
 	return -ESRCH;
     }
+
 
     //First check if a period timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.
@@ -147,6 +150,10 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	if((retval =sched_setaffinity(temp->pid, &cpuset)) < 0){
 	    printk("Could not set the affinity for %d with err %d\n", temp->pid, retval);
 	}
+
+	//Unlocking our custom spin lock for every process when
+	//they enter
+	//spin_lock_init(temp->tasklock);
 
     }while_each_thread(curr,temp);
 

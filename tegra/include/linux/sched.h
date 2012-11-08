@@ -1588,6 +1588,13 @@ struct task_struct {
 	/*It saves the periodic Time for each task*/
 	struct hrtimer period_timer;
 
+        //Custom spinlock for time field protections
+	//across system calls and SCHEDULE in a SMP environment
+        spinlock_t tasklock;
+
+	//Flag to see if budget is set
+	char is_budget_set;
+
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */

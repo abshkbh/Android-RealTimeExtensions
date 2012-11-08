@@ -2895,18 +2895,23 @@ static void __sched_fork(struct task_struct *p)
     (p->budget_time).tv_sec        = -1;
     (p->budget_time).tv_nsec       = -1;
 
+     //Setting flag to zero. This is used to
+     //see if setProcessBudget was called on this process
+     p->is_budget_set = 0;
 
+     //Initing spin_lock
+     spinlock_init(&p->tasklock);
 
-    INIT_LIST_HEAD(&p->se.group_node);
+     INIT_LIST_HEAD(&p->se.group_node);
 
 #ifdef CONFIG_SCHEDSTATS
-    memset(&p->se.statistics, 0, sizeof(p->se.statistics));
+     memset(&p->se.statistics, 0, sizeof(p->se.statistics));
 #endif
 
-    INIT_LIST_HEAD(&p->rt.run_list);
+     INIT_LIST_HEAD(&p->rt.run_list);
 
 #ifdef CONFIG_PREEMPT_NOTIFIERS
-    INIT_HLIST_HEAD(&p->preempt_notifiers);
+     INIT_HLIST_HEAD(&p->preempt_notifiers);
 #endif
 }
 
@@ -4442,7 +4447,7 @@ need_resched:
 		printk("Prev %d not the grp leader\n",prev->pid);
 
 		if(((prev->group_leader)->exec_time).tv_sec != 0 && 
-		    ((prev->group_leader)->exec_time).tv_nsec != 0){
+			((prev->group_leader)->exec_time).tv_nsec != 0){
 		    //Getting the difference of current time and swap in time for prev task
 		    diff = timespec_sub (t1 , (prev->group_leader)->exec_time);
 
@@ -4509,8 +4514,8 @@ need_resched:
 
 		//Else if budget is smaller (which should ideally never happen)
 		//send signal to process to be killed
-	        printk("CT %ld s, %ld ns\n", (next->compute_time).tv_sec,(next->compute_time).tv_nsec);
-	        //PRINT_TIME(next->compute_time);
+		printk("CT %ld s, %ld ns\n", (next->compute_time).tv_sec,(next->compute_time).tv_nsec);
+		//PRINT_TIME(next->compute_time);
 		printk("No budget remaining for %d\n", next->pid);
 	    }
 
