@@ -37,8 +37,6 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
     (curr->time_period).tv_sec = -1;
     (curr->time_period).tv_nsec = -1;
 
-
-
     temp = curr;
 
     do{

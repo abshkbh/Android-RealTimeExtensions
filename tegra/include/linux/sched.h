@@ -81,6 +81,7 @@ struct sched_param {
 #include <linux/rcupdate.h>
 #include <linux/rculist.h>
 #include <linux/rtmutex.h>
+#include <linux/spinlock.h>
 
 #include <linux/time.h>
 #include <linux/param.h>

@@ -9,6 +9,7 @@
 #include <linux/errno.h>
 #include <asm/uaccess.h>
 
+#define CPU 0
 
 enum hrtimer_restart budget_timer_callback(struct hrtimer * timer);
 enum hrtimer_restart period_timer_callback(struct hrtimer * timer);
@@ -22,15 +23,16 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     struct task_struct *temp;
     ktime_t p;
     int retval;
+    unsigned long flags;
     struct sched_param rt_sched_parameters;
     struct cpumask cpuset;
-    cpumask_clear(&cpuset);
-    cpumask_set_cpu(0, &cpuset);
+  //  cpumask_clear(&cpuset);
+   // cpumask_set_cpu(0, &cpuset);
+    memset(&cpuset , 0 , sizeof(struct cpumask));
+    cpumask_set_cpu(CPU, &cpuset);
 
 
-
-
-   //   spinlock_t mr_lock = SPIN_LOCK_UNLOCKED;
+    //   spinlock_t mr_lock = SPIN_LOCK_UNLOCKED;
     //   unsigned long flags;
 
     //Error check for seeing if budget & period specs are safe to read
@@ -71,7 +73,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	return -EINVAL;
     }
 
-    //    spin_lock_irqsave(&mr_lock,flags);
+
     //Finding task struct given its pid
     read_lock(&tasklist_lock);
     curr = (struct task_struct *) find_task_by_vpid(pid);
@@ -80,7 +82,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	printk("Couldn't find task\n");
 	return -ESRCH;
     }
-
+    spin_lock_irqsave(&(curr->tasklock),flags);
 
     //First check if a period timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.
@@ -165,10 +167,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	printk("Could not restart budget timer for task %d", pid);
     }
 
-    //   spin_unlock_irqrestore(&mr_lock,flags);
-
     printk("User RT Prio for task %d is %d\n",pid,curr->rt_priority);
 
+    spin_unlock_irqrestore(&(curr->tasklock),flags);
     return 0;
 }
 
