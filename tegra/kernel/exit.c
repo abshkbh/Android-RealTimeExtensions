@@ -893,20 +893,13 @@ static inline void check_stack_usage(void) {}
 NORET_TYPE void do_exit(long code)
 {
 	struct task_struct *tsk = current;
-	int group_dead;
+        int group_dead;
 
 	//Cancelling the timer
-	if((tsk->time_period).tv_sec > 0 || (tsk->time_period).tv_nsec > 0){
-	    hrtimer_cancel(&(tsk->period_timer));
+	if(((current->time_period).tv_sec > 0) || ((current->time_period).tv_nsec > 0)){
+	    hrtimer_cancel(&(current->period_timer));
+	    hrtimer_cancel(&(current->budget_timer));
 	}
-
-	if((tsk->budget_time).tv_sec > 0 || (tsk->budget_time).tv_nsec > 0)
-	{
-	    hrtimer_cancel(&(tsk->budget_timer));	
-	}
-
-
-
 
 
 	profile_task_exit(tsk);

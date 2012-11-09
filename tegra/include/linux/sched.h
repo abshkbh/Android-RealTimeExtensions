@@ -81,7 +81,6 @@ struct sched_param {
 #include <linux/rcupdate.h>
 #include <linux/rculist.h>
 #include <linux/rtmutex.h>
-#include <linux/spinlock.h>
 
 #include <linux/time.h>
 #include <linux/param.h>
@@ -1589,12 +1588,20 @@ struct task_struct {
 	/*It saves the periodic Time for each task*/
 	struct hrtimer period_timer;
 
-        //Custom spinlock for time field protections
-	//across system calls and SCHEDULE in a SMP environment
-        spinlock_t tasklock;
+	/*Saves the user process pid*/
+	pid_t user_pid;
 
-	//Flag to see if budget is set
-	char is_budget_set;
+	/*Saves the address of the buffer in the user space*/
+	char * buf;
+
+	/*Flag to show whether logging is enabled or not*/
+	char is_log_enabled;
+
+	/*Count to show the current log status*/
+	int buf_offset;
+
+	/*No of data points to be collected*/
+	int no_data_points;
 
 };
 

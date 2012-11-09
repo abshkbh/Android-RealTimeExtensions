@@ -852,4 +852,6 @@ asmlinkage int sys_waitUntilNextPeriod(pid_t pid);
 asmlinkage int sys_mycall(int num1,int num2,long long *sum);
 asmlinkage int sys_get_process_count(void);
 asmlinkage int sys_get_current_processes(char *buf,int n);
+asmlinkage int sys_set_logging(pid_t log_pid, pid_t user_pid, int no_data_points);
+asmlinkage int sys_get_log( pid_t pid, char * buf);
 #endif
