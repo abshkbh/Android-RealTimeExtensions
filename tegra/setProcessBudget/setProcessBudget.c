@@ -15,8 +15,6 @@ enum hrtimer_restart budget_timer_callback(struct hrtimer * timer);
 enum hrtimer_restart period_timer_callback(struct hrtimer * timer);
 
 
-
-
 asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct timespec period, int rt_prio) {
 
     struct task_struct *curr;
@@ -26,25 +24,8 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     unsigned long flags;
     struct sched_param rt_sched_parameters;
     struct cpumask cpuset;
-  //  cpumask_clear(&cpuset);
-   // cpumask_set_cpu(0, &cpuset);
-    memset(&cpuset , 0 , sizeof(struct cpumask));
+    cpumask_clear(&cpuset);
     cpumask_set_cpu(CPU, &cpuset);
-
-
-    //   spinlock_t mr_lock = SPIN_LOCK_UNLOCKED;
-    //   unsigned long flags;
-
-    //Error check for seeing if budget & period specs are safe to read
-    /*    if (!access_ok(VERIFY_READ , &budget , sizeof(struct timespec))) {
-	  printk("Unsafe budget memory area\n");
-	  return -EFAULT;
-	  } 
-	  if (!access_ok(VERIFY_READ , &period , sizeof(struct timespec))) {
-	  printk("Unsafe period memory area\n");
-	  return -EFAULT;
-	  } */
-
 
     //Error checks for input arguments
     if (!((budget.tv_sec > 0) || (budget.tv_nsec > 0))) {
@@ -82,7 +63,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	printk("Couldn't find task\n");
 	return -ESRCH;
     }
-    spin_lock_irqsave(&(curr->tasklock),flags);
+
+    //   spin_lock_irqsave(&(curr->tasklock),flags);
+    write_lock(&tasklist_lock);
 
     //First check if a period timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.
@@ -93,35 +76,16 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     //If timer is being initialized the first time then
     //Initialize timer , set the callback and set  expiry period to Budget 
     else {
+	printk("Initing period timer\n");
 	hrtimer_init(&(curr->period_timer),CLOCK_MONOTONIC,HRTIMER_MODE_REL);
 	(curr->period_timer).function = &period_timer_callback;
     }
+
     (curr->time_period).tv_sec = period.tv_sec;
     (curr->time_period).tv_nsec = period.tv_nsec;
-    /*  if (copy_from_user(&(curr->time_period), &period,sizeof(struct timespec)) !=0) {
-	printk("Couldn't copy period from user\n");
-	return -EFAULT;
-	}*/
 
-
-    //First check if a budget timer already exists from a previous edition of this syscall.
-    //If yes then we cancel it.
-    // If this syscall returns 0 or 1 then timer is succesfully cancelled  
-    if (((curr -> budget_time).tv_sec > 0) || ((curr -> budget_time).tv_nsec > 0)) {
-	hrtimer_cancel(&(curr->budget_timer));
-    }
-    //If timer is being initialized the first time then
-    //Initialize timer , set the callback and set  expiry period to Budget 
-    else {
-	hrtimer_init(&(curr->budget_timer),CLOCK_MONOTONIC,HRTIMER_MODE_REL);
-	(curr->budget_timer).function = &budget_timer_callback;
-    }
-    (curr->budget_time).tv_sec = budget.tv_sec;
-    (curr->budget_time).tv_nsec = budget.tv_nsec;
-    /*    if (copy_from_user(&(curr->budget_time), &budget,sizeof(struct timespec)) !=0) {
-	  printk("Couldn't copy budget from user\n");
-	  return -EFAULT;
-	  } */
+    //    (curr->budget_time).tv_sec = budget.tv_sec;
+    //    (curr->budget_time).tv_nsec = budget.tv_nsec;
 
     //Setting user_rt_prio to priority given by user and
     //sched policy to SCHED_FIFO
@@ -153,13 +117,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	    printk("Could not set the affinity for %d with err %d\n", temp->pid, retval);
 	}
 
-	//Unlocking our custom spin lock for every process when
-	//they enter
-	//spin_lock_init(temp->tasklock);
-
     }while_each_thread(curr,temp);
-
-
 
     //Start Timer
     p = timespec_to_ktime(period);
@@ -167,9 +125,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	printk("Could not restart budget timer for task %d", pid);
     }
 
-    printk("User RT Prio for task %d is %d\n",pid,curr->rt_priority);
-
-    spin_unlock_irqrestore(&(curr->tasklock),flags);
+    printk("User RT Prio for task %d is %d\n",pid,curr->pid);
+    write_unlock(&tasklist_lock);
+    //  spin_unlock_irqrestore(&(curr->tasklock),flags);
     return 0;
 }
 

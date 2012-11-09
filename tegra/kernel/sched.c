@@ -217,6 +217,7 @@ enum hrtimer_restart period_timer_callback(struct hrtimer * timer) {
     //Timer callback functionality for periodic timer
     struct task_struct * curr = container_of(timer, struct task_struct, period_timer);
 
+    printk("Time Period cback\n");
     //setting the current time to 0 basically replenishing the budget after the period
     (curr->compute_time).tv_sec = 0;
     (curr->compute_time).tv_nsec = 0;
@@ -231,11 +232,13 @@ enum hrtimer_restart period_timer_callback(struct hrtimer * timer) {
 
     temp = curr;
     do{
-    //waking up the task
-    wake_up_process(temp);
+	(temp->compute_time).tv_sec = 0;
+	(temp->compute_time).tv_nsec = 0;
+	printk("PT: TID : %d TGID = %d\n",temp->pid,temp->tgid);
+	//waking up the task
+	wake_up_process(temp);
     } while_each_thread(curr, temp);
 
-    printk("Time Period cback\n");
 
     return HRTIMER_RESTART;
 } 
@@ -2895,23 +2898,23 @@ static void __sched_fork(struct task_struct *p)
     (p->budget_time).tv_sec        = -1;
     (p->budget_time).tv_nsec       = -1;
 
-     //Setting flag to zero. This is used to
-     //see if setProcessBudget was called on this process
-     p->is_budget_set = 0;
+    //Setting flag to zero. This is used to
+    //see if setProcessBudget was called on this process
+    p->is_budget_set = 0;
 
-     //Initing spin_lock
-     p->tasklock = __SPIN_LOCK_UNLOCKED(p->tasklock);
+    //Initing spin_lock
+    p->tasklock = __SPIN_LOCK_UNLOCKED(p->tasklock);
 
-     INIT_LIST_HEAD(&p->se.group_node);
+    INIT_LIST_HEAD(&p->se.group_node);
 
 #ifdef CONFIG_SCHEDSTATS
-     memset(&p->se.statistics, 0, sizeof(p->se.statistics));
+    memset(&p->se.statistics, 0, sizeof(p->se.statistics));
 #endif
 
-     INIT_LIST_HEAD(&p->rt.run_list);
+    INIT_LIST_HEAD(&p->rt.run_list);
 
 #ifdef CONFIG_PREEMPT_NOTIFIERS
-     INIT_HLIST_HEAD(&p->preempt_notifiers);
+    INIT_HLIST_HEAD(&p->preempt_notifiers);
 #endif
 }
 
@@ -4438,9 +4441,8 @@ need_resched:
 	// We check if budget time has been set by the user. If yes then we go ahead and cancel
 	// the task that is being swapped out's timer 
 	if (((prev->budget_time).tv_sec >= 0) && ((prev->budget_time).tv_nsec >= 0)) {
-            spin_lock_irqsave(&((prev->group_leader)->tasklock),flags);
-            printk("Prev is on %d and Next is on %d\n",task_cpu(prev),task_cpu(next));
-
+	    //spin_lock_irqsave(&((prev->group_leader)->tasklock),flags);
+	    printk("Prev is on %d\n",task_cpu(prev));
 	    //Getting the current time in order to compute exec time of prev
 	    //task being swapped out
 	    getrawmonotonic( &(t1) );
@@ -4471,7 +4473,7 @@ need_resched:
 		}
 
 	    }
-	    spin_unlock_irqrestore(&((prev->group_leader)->tasklock),flags);
+	    //spin_unlock_irqrestore(&((prev->group_leader)->tasklock),flags);
 	    //..END HERE
 
 	    //.....CODE SNIPPET TO CANCEL A BUDGET TIMER IF IT EXIST FOR GIVEN TASK....
@@ -4487,8 +4489,8 @@ need_resched:
 	// ahead to see if computation time exceeds budget time 
 	if (((next->budget_time).tv_sec >= 0) && ((next->budget_time).tv_nsec >= 0)) {
 
-            spin_lock_irqsave(&((next->group_leader)->tasklock),flags);
-	    printk("Prev is on %d and Next is on %d\n",task_cpu(prev),task_cpu(next));
+	    // spin_lock_irqsave(&((next->group_leader)->tasklock),flags);
+	    printk("Next is on %d\n",task_cpu(next));
 	    if(!IS_GROUP_LEADER(next->pid, next->tgid)){
 		printk("Next %d not the grp leader\n", next->pid);
 
@@ -4521,11 +4523,10 @@ need_resched:
 		//Else if budget is smaller (which should ideally never happen)
 		//send signal to process to be killed
 		printk("CT %ld s, %ld ns\n", (next->compute_time).tv_sec,(next->compute_time).tv_nsec);
-		//PRINT_TIME(next->compute_time);
 		printk("No budget remaining for %d\n", next->pid);
 	    }
 
-	    spin_unlock_irqrestore(&((next->group_leader)->tasklock),flags);
+	    //spin_unlock_irqrestore(&((next->group_leader)->tasklock),flags);
 	}    
 
 	context_switch(rq, prev, next); /* unlocks the rq */
