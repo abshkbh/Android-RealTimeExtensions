@@ -4450,12 +4450,10 @@ need_resched:
 	    if(!(IS_GROUP_LEADER(prev->pid, prev->tgid))){
 
 		printk("Prev %d not the grp leader\n",prev->pid);
-
 		if(((prev->group_leader)->exec_time).tv_sec != 0 && 
 			((prev->group_leader)->exec_time).tv_nsec != 0){
 		    //Getting the difference of current time and swap in time for prev task
 		    diff = timespec_sub (t1 , (prev->group_leader)->exec_time);
-
 		    //Adding the difference to compute time
 		    (prev->group_leader)->compute_time = timespec_add((prev->group_leader)->compute_time , diff);
 		}
@@ -4467,7 +4465,6 @@ need_resched:
 		if((prev->exec_time).tv_sec != 0 && (prev->exec_time).tv_nsec != 0){
 		    //Getting the difference of current time and swap in time for prev task
 		    diff = timespec_sub (t1 , prev->exec_time);
-
 		    //Adding the difference to compute time
 		    prev->compute_time = timespec_add(prev->compute_time , diff);
 		}

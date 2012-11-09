@@ -65,7 +65,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     }
 
     //   spin_lock_irqsave(&(curr->tasklock),flags);
-    write_lock(&tasklist_lock);
+   // write_lock(&tasklist_lock);
 
     //First check if a period timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.
@@ -80,7 +80,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	hrtimer_init(&(curr->period_timer),CLOCK_MONOTONIC,HRTIMER_MODE_REL);
 	(curr->period_timer).function = &period_timer_callback;
     }
-
+    
+    write_lock(&tasklist_lock);
+    
     (curr->time_period).tv_sec = period.tv_sec;
     (curr->time_period).tv_nsec = period.tv_nsec;
 
@@ -93,6 +95,8 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     rt_sched_parameters.sched_priority = rt_prio;
     sched_setscheduler(curr,SCHED_FIFO,&rt_sched_parameters);
 
+    write_unlock(&tasklist_lock);
+    
     //Traversing over threads in the thread group and setting the values of
     //C, T as well as initializing the budget timer.
     temp = curr;
@@ -107,11 +111,13 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	    hrtimer_init(&(temp->budget_timer),CLOCK_MONOTONIC,HRTIMER_MODE_REL);
 	    (temp->budget_timer).function = &budget_timer_callback;
 	}
+	write_lock(&tasklist_lock);
 
 	//Setting the budget
 	(temp->budget_time).tv_sec = budget.tv_sec;
 	(temp->budget_time).tv_nsec = budget.tv_nsec;
 
+	write_unlock(&tasklist_lock);
 	//Setting affinity
 	if((retval =sched_setaffinity(temp->pid, &cpuset)) < 0){
 	    printk("Could not set the affinity for %d with err %d\n", temp->pid, retval);
@@ -126,7 +132,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     }
 
     printk("User RT Prio for task %d is %d\n",pid,curr->pid);
-    write_unlock(&tasklist_lock);
+    //write_unlock(&tasklist_lock);
     //  spin_unlock_irqrestore(&(curr->tasklock),flags);
     return 0;
 }
