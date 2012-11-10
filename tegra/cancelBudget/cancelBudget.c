@@ -26,6 +26,9 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
 	return -ESRCH;
     }
 
+   curr->is_budget_set = 0;
+
+
     //First check if a period timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.
     // If this syscall returns 0 or 1 then timer is succesfully cancelled  
