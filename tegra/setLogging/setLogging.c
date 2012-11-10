@@ -7,7 +7,7 @@
 #include <linux/kernel.h>
 #include <linux/sched.h> /* For task_struct */
 #include <linux/time.h>
-#include <linux/slab.h>
+#include <linux/vmalloc.h>
 
 asmlinkage int sys_setLogging( pid_t log_pid, pid_t user_pid, int no_data_points ){
 
@@ -47,7 +47,12 @@ asmlinkage int sys_setLogging( pid_t log_pid, pid_t user_pid, int no_data_points
     //Setting up all the parameters in the task structure for logging
     write_lock(&tasklist_lock);
     curr->user_pid = user_pid;
-    curr->buf = kmalloc(size, GFP_KERNEL);
+    curr->buf = vmalloc(size);
+    if(curr->buf == NULL){
+	printk("Cant allocate space\n");
+	write_unlock(&tasklist_lock);
+	return -1;	
+    }
     memset(curr->buf, '0', size);
     curr->is_log_enabled = 1;
     curr->buf_offset = 0;

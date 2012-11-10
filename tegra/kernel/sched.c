@@ -233,13 +233,16 @@ int log_data_point(struct task_struct * curr, struct timespec data){
 
     if(curr->buf_offset > (2*curr->no_data_points)){
 	//Sending signal
+	curr->is_log_enabled = 0;
 
+	read_lock(&tasklist_lock);
 	for_each_process(temp){
 	    if(temp->pid == curr->user_pid){
 		printk("LOG: PID of temp is %d\n", temp->pid);
 		break;
 	    }
 	}
+	read_unlock(&tasklist_lock);
 
 	info.si_signo = SIGUSR1;
 	info.si_code = SI_KERNEL;
@@ -250,15 +253,15 @@ int log_data_point(struct task_struct * curr, struct timespec data){
 	}
 
 	printk("Data points collected\n");
-	curr->is_log_enabled = 0;
 	return -1;
     }
     
     curr_offset = curr->buf_offset * sizeof(struct timespec);
-    printk("Offset is %d\n", curr_offset);
+    printk("Offset is %d\n", curr->buf_offset);
+
+    printk("In log data: %ld s: %ldns\n", data.tv_sec, data.tv_nsec);
 
     memcpy(((curr->buf)+curr_offset), &data, sizeof(struct timespec));
-    printk("In Log Data Point: %s\n", curr->buf);
 
     (curr->buf_offset)++;
 
@@ -4516,14 +4519,12 @@ need_resched:
 
 	if(prev->is_log_enabled == 1){
 	    //Logs the compute time of the system
-	    log_data_point(prev, prev->compute_time);
-	    printk("Buffer: %s\n", prev->buf);
+	    log_data_point(prev, diff);
 	}
 
 	if(next->is_log_enabled == 1){
 	    //Logs the timestamp of the system
 	    log_data_point(next, next->exec_time);
-	    printk("Buffer: %s\n", next->buf);
 	}
 
 	context_switch(rq, prev, next); /* unlocks the rq */
