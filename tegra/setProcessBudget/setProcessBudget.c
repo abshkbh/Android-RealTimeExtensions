@@ -102,7 +102,8 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     curr->rt_priority = rt_prio;
     rt_sched_parameters.sched_priority = rt_prio;
     sched_setscheduler(curr,SCHED_FIFO,&rt_sched_parameters);
-    
+    set_tsk_need_resched(curr);
+
     write_unlock(&tasklist_lock);
 
     read_lock(&tasklist_lock);

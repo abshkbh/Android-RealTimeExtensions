@@ -4482,9 +4482,12 @@ need_resched:
 	}
 
 	if(prev->is_log_enabled == 1){
+	  
+	    spin_lock_irqsave(&(prev->task_spin_lock),flagone);
 	    //Logs the compute time of the system
 	    log_data_point(prev, prev->compute_time);
 	    printk("Buffer: %s\n", prev->buf);
+	    spin_unlock_irqrestore(&(prev->task_spin_lock),flagone);
 	}
 
 	// We check if budget time for "next" has been set by the user. If yes then we will go
@@ -4535,9 +4538,11 @@ need_resched:
 	}
 
 	if(next->is_log_enabled == 1){
+	    spin_lock_irqsave(&(next->task_spin_lock),flagone);
 	    //Logs the timestamp of the system
 	    log_data_point(next, next->exec_time);
 	    printk("Buffer: %s\n", next->buf);
+	    spin_unlock_irqrestore(&(next->task_spin_lock),flagone);
 	}
 
 
