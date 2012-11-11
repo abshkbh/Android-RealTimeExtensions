@@ -259,10 +259,9 @@ int log_data_point(struct task_struct * curr, struct timespec data){
     }
 
     curr_offset = curr->buf_offset * sizeof(struct timespec);
-    printk("Offset is %d\n", curr_offset);
+    printk("Offset is %d\n", curr->buf_offset);
 
     memcpy(((curr->buf)+curr_offset), &data, sizeof(struct timespec));
-    printk("In Log Data Point: %s\n", curr->buf);
 
     (curr->buf_offset)++;
 
@@ -4485,11 +4484,11 @@ need_resched:
 
 	}
 
-	if(prev->is_log_enabled == 1){
+	if(prev->is_log_enabled == 1 && prev->buf_offset != 0){
 
 	    spin_lock_irqsave(&(prev->task_spin_lock),flagone);
 	    //Logs the compute time of the system
-	    log_data_point(prev, prev->compute_time);
+	    log_data_point(prev, diff);
 	    spin_unlock_irqrestore(&(prev->task_spin_lock),flagone);
 	}
 
