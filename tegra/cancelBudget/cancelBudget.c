@@ -10,6 +10,7 @@
 asmlinkage int sys_cancelBudget(pid_t pid) {
 
     struct task_struct * curr;
+    unsigned long flags;
 
     //Error checks for input arguments
     if (pid <= 0) {
@@ -26,16 +27,16 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
 	return -ESRCH;
     }
 
-   curr->is_budget_set = 0;
-
-
+    spin_lock_irqsave(&(curr->task_spin_lock),flags);
+    
+    curr->is_budget_set = 0;
     //First check if a period timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.
     // If this syscall returns 0 or 1 then timer is succesfully cancelled  
     if (((curr -> time_period).tv_sec > 0) || ((curr -> time_period).tv_nsec > 0)) {
 	hrtimer_cancel(&(curr->period_timer));
     }
-    
+
     (curr->time_period).tv_sec = -1;
     (curr->time_period).tv_nsec = -1;
 
@@ -46,7 +47,7 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
     if (((curr -> budget_time).tv_sec > 0) || ((curr -> budget_time).tv_nsec > 0)) {
 	hrtimer_cancel(&(curr->budget_timer));
     }
-    
+
     (curr->budget_time).tv_sec = -1;
     (curr->budget_time).tv_nsec = -1;
 
@@ -56,6 +57,7 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
     }
 
     printk("Budget cancelled\n");
+    spin_unlock_irqrestore(&(curr->task_spin_lock),flags);
 
     return 0;
 }

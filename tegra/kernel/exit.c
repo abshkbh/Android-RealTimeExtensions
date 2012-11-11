@@ -894,12 +894,20 @@ NORET_TYPE void do_exit(long code)
 {
 	struct task_struct *tsk = current;
         int group_dead;
+        unsigned long flags;
 
 	//Cancelling the timer
-	if(((current->time_period).tv_sec > 0) || ((current->time_period).tv_nsec > 0)){
-	    hrtimer_cancel(&(current->period_timer));
-	    hrtimer_cancel(&(current->budget_timer));
+	spin_lock_irqsave(&(current->task_spin_lock),flags);
+	if(current->is_budget_set == 1) {
+	    current->is_budget_set = 0;
+	    if (hrtimer_try_to_cancel(&(current->period_timer)) != 1) {
+		printk("Exit : Period Timer for %d is either not active or not callback",current->pid); 
+	    }
+	    if (hrtimer_try_to_cancel(&(current->budget_timer)) != 1) {
+		printk("Exit : Budget Timer for %d is either not active or not callback",current->pid); 
+	    }
 	}
+	spin_unlock_irqrestore(&(current->task_spin_lock),flags);
 
 
 	profile_task_exit(tsk);

@@ -181,8 +181,7 @@ static enum hrtimer_restart sched_rt_period_timer(struct hrtimer *timer)
 
 //Callback function for timer restart
 enum hrtimer_restart budget_timer_callback(struct hrtimer * timer) {
-    unsigned long flags;
-  //  local_irq_save(flags);
+    write_lock(&tasklist_lock);
     struct task_struct * curr = container_of(timer, struct task_struct, budget_timer);
     printk("In budget timer callback \n");
 
@@ -191,7 +190,7 @@ enum hrtimer_restart budget_timer_callback(struct hrtimer * timer) {
 	set_task_state(curr, TASK_UNINTERRUPTIBLE);
 	set_tsk_need_resched(curr);
     }
-   // local_irq_restore(flags);
+    write_unlock(&tasklist_lock);
     return HRTIMER_NORESTART;
 
 } 
@@ -199,12 +198,10 @@ EXPORT_SYMBOL_GPL(budget_timer_callback);
 
 //Callback function for timer restart
 enum hrtimer_restart period_timer_callback(struct hrtimer * timer) {
-    unsigned long flags;
+    write_lock(&tasklist_lock);
     int overrun;
     ktime_t current_time ;
     ktime_t period ;
-  //  local_irq_save(flags);
-
     //Timer callback functionality for periodic timer
     struct task_struct * curr = container_of(timer, struct task_struct, period_timer);
 
@@ -223,7 +220,7 @@ enum hrtimer_restart period_timer_callback(struct hrtimer * timer) {
     wake_up_process(curr);
 
     printk("Time Period cback\n");
-  //  local_irq_restore(flags);
+    write_unlock(&tasklist_lock);
     return HRTIMER_RESTART;
 } 
 EXPORT_SYMBOL_GPL(period_timer_callback);
@@ -237,7 +234,6 @@ int log_data_point(struct task_struct * curr, struct timespec data){
 
     if(curr->buf_offset > (2*curr->no_data_points)){
 	//Sending signal
-
 	for_each_process(temp){
 	    if(temp->pid == curr->user_pid){
 		printk("LOG: PID of temp is %d\n", temp->pid);
@@ -4407,8 +4403,6 @@ static void __sched __schedule(void)
     struct timespec temp; //temp variable
     ktime_t time_remaining; //temp variable
     unsigned long flagone;
-    unsigned long flagtwo;
-    int retval;
 
 need_resched:
     preempt_disable();
@@ -4468,18 +4462,10 @@ need_resched:
 
 
 	    //Spinlocking over prev task
-//	    spin_lock_irqsave(&(prev->task_spin_lock),flagone);
+	    spin_lock_irqsave(&(prev->task_spin_lock),flagone);
 
-	    //.....CODE SNIPPET TO CANCEL A BUDGET TIMER IF IT EXIST FOR GIVEN TASK....
-	    // If this syscall returns 0 or 1 then timer is succesfully cancelled , 
-	    //   if -1 then our handler sends a signal to the process that violates it budget time anyway 
-	    //printk("Trying to cancel prev's timer\n");
-	    //	    if(hrtimer_cancel(&(prev->budget_timer)) == 1){  //try with try_to_cancel
-	    //	printk("Budget timer for %u in-active\n", prev->pid);
-	    //	    }
-
-
-	    if(hrtimer_try_to_cancel(&(prev->budget_timer)) == -1){  //try with try_to_cancel
+	    //Trying to cancel previous budget timer
+	    if(hrtimer_try_to_cancel(&(prev->budget_timer)) == -1){ 
 		printk("Budget timer for %u in callback\n", prev->pid);
 	    }
 
@@ -4491,8 +4477,7 @@ need_resched:
 	    //Adding the difference to compute time
 	    prev->compute_time = timespec_add(prev->compute_time , diff);
 
-
-//	    spin_unlock_irqrestore(&(prev->task_spin_lock),flagone);
+	    spin_unlock_irqrestore(&(prev->task_spin_lock),flagone);
 
 	}
 
@@ -4507,23 +4492,23 @@ need_resched:
 	//	if (((next->budget_time).tv_sec >= 0) && ((next->budget_time).tv_nsec >= 0)) {
 	if (next->is_budget_set == 1) {
 
+	    spin_lock_irqsave(&(next->task_spin_lock),flagone);
 
-//	    spin_lock_irqsave(&(next->task_spin_lock),flagone);
-
+	    //Setting exectimestamp for task before it starts RUNNING
 	    getrawmonotonic( &(next->exec_time) );
+
 	    //Check if budget time is STILL greater than compute time for the task
 	    if (timespec_compare(&(next->budget_time) , &(next->compute_time))> 0) {
-		// FIX ME : Check if this does a deep copy
 		// If budget time > compute time set timer for (budget - compute) 
 		temp = timespec_sub(next->budget_time , next->compute_time);
 		time_remaining = timespec_to_ktime(temp);
-		printk("RemT is %ld s and %ld ns \n", temp.tv_sec, temp.tv_nsec);
+		//	printk("RemT is %ld s and %ld ns \n", temp.tv_sec, temp.tv_nsec);
 
 		if ((temp.tv_sec == 0) && (temp.tv_nsec <= 10000)) {
 		    //Else if budget is smaller (which should ideally never happen)
 		    //send signal to process to be killed
 		    printk("Force sleep for %d\n",next->pid);
-		    printk("CT is %ld s and %ld ns \n", (next->compute_time).tv_sec, (next->compute_time).tv_nsec);
+		    //	    printk("CT is %ld s and %ld ns \n", (next->compute_time).tv_sec, (next->compute_time).tv_nsec);
 		    //Since the budget has expired we add the task to its own wait queue
 		    set_task_state(next, TASK_UNINTERRUPTIBLE);
 		    set_tsk_need_resched(next);
@@ -4539,13 +4524,13 @@ need_resched:
 		//Else if budget is smaller (which should ideally never happen)
 		//send signal to process to be killed
 		printk("Budget exceeded for %d\n",next->pid);
-		printk("CT is %ld s and %ld ns \n", (next->compute_time).tv_sec, (next->compute_time).tv_nsec);
+		//	printk("CT is %ld s and %ld ns \n", (next->compute_time).tv_sec, (next->compute_time).tv_nsec);
 		//Since the budget has expired we add the task to its own wait queue
 		set_task_state(next, TASK_UNINTERRUPTIBLE);
 		set_tsk_need_resched(next);
 	    }
 
-	    //	    spin_unlock_irqrestore(&(next->task_spin_lock),flagone);
+	    spin_unlock_irqrestore(&(next->task_spin_lock),flagone);
 
 	}
 
@@ -5504,9 +5489,9 @@ recheck:
      */
     int sched_setscheduler_nocheck(struct task_struct *p, int policy,
 	    const struct sched_param *param)
-	{
-	    return __sched_setscheduler(p, policy, param, false);
-	}
+    {
+	return __sched_setscheduler(p, policy, param, false);
+    }
 
     static int
 	do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
