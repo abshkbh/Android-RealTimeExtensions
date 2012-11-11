@@ -233,7 +233,10 @@ int log_data_point(struct task_struct * curr, struct timespec data){
     struct task_struct * temp;
 
     if(curr->buf_offset > (2*curr->no_data_points)){
+
+	write_lock(&tasklist_lock);
 	//Sending signal
+	curr->is_log_enabled = 0;
 	for_each_process(temp){
 	    if(temp->pid == curr->user_pid){
 		printk("LOG: PID of temp is %d\n", temp->pid);
@@ -250,7 +253,8 @@ int log_data_point(struct task_struct * curr, struct timespec data){
 	}
 
 	printk("Data points collected\n");
-	curr->is_log_enabled = 0;
+	write_unlock(&tasklist_lock);
+	
 	return -1;
     }
 
@@ -4482,11 +4486,10 @@ need_resched:
 	}
 
 	if(prev->is_log_enabled == 1){
-	  
+
 	    spin_lock_irqsave(&(prev->task_spin_lock),flagone);
 	    //Logs the compute time of the system
 	    log_data_point(prev, prev->compute_time);
-	    printk("Buffer: %s\n", prev->buf);
 	    spin_unlock_irqrestore(&(prev->task_spin_lock),flagone);
 	}
 
@@ -4541,7 +4544,6 @@ need_resched:
 	    spin_lock_irqsave(&(next->task_spin_lock),flagone);
 	    //Logs the timestamp of the system
 	    log_data_point(next, next->exec_time);
-	    printk("Buffer: %s\n", next->buf);
 	    spin_unlock_irqrestore(&(next->task_spin_lock),flagone);
 	}
 
