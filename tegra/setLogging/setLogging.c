@@ -3,11 +3,12 @@
  * Our syscall which enables the logging.
  */
 
+
 #include <linux/linkage.h>
 #include <linux/kernel.h>
 #include <linux/sched.h> /* For task_struct */
 #include <linux/time.h>
-#include <linux/slab.h>
+#include <linux/vmalloc.h>
 
 asmlinkage int sys_setLogging( pid_t log_pid, pid_t user_pid, int no_data_points ){
 
@@ -48,13 +49,12 @@ asmlinkage int sys_setLogging( pid_t log_pid, pid_t user_pid, int no_data_points
     spin_lock_irqsave(&(curr->task_spin_lock),flags);
     
     curr->user_pid = user_pid;
-    curr->buf = kmalloc(size, GFP_KERNEL);
+    curr->buf = vmalloc(size);
     memset(curr->buf, '0', size);
     curr->is_log_enabled = 1;
     curr->buf_offset = 0;
     curr->no_data_points = no_data_points;
 
-    printk("Buffer : %s\n", curr->buf);
     printk("Exiting logging syscall\n");
     
     spin_unlock_irqrestore(&(curr->task_spin_lock),flags);

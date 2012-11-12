@@ -3,6 +3,7 @@
  * Our syscall which enables the logging.
  */
 
+#include <linux/vmalloc.h>
 #include <linux/linkage.h>
 #include <linux/kernel.h>
 #include <linux/sched.h> /* For task_struct */
@@ -36,12 +37,12 @@ asmlinkage int sys_getLog( pid_t pid, char * buf ){
     printk("In get log, size is %d\n", size);
 
     if(copy_to_user(buf, curr->buf, size) != 0){
-	kfree(curr->buf);
-	return -EFAULT;
+	vfree(curr->buf);
+        printk("Error while copying to user\n");
+        return -EFAULT;
     }
 
-    kfree(curr->buf);
+    vfree(curr->buf);
     return size;
 
-    return 0;
 }

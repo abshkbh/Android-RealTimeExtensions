@@ -232,7 +232,7 @@ int log_data_point(struct task_struct * curr, struct timespec data){
     struct siginfo info;
     struct task_struct * temp;
 
-    if(curr->buf_offset > (2*curr->no_data_points)){
+    if(curr->buf_offset >= (2*curr->no_data_points)){
 
 	write_lock(&tasklist_lock);
 	//Sending signal
