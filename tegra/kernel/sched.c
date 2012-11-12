@@ -181,14 +181,16 @@ static enum hrtimer_restart sched_rt_period_timer(struct hrtimer *timer)
 
 //Callback function for timer restart
 enum hrtimer_restart budget_timer_callback(struct hrtimer * timer) {
-
+    write_lock(&tasklist_lock);
     struct task_struct * curr = container_of(timer, struct task_struct, budget_timer);
     printk("In budget timer callback \n");
 
     //Since the budget has expired we add the task to its own wait queue
-      set_task_state(curr, TASK_UNINTERRUPTIBLE);
-      set_tsk_need_resched(curr);
-
+    if(curr->state != TASK_UNINTERRUPTIBLE) {
+	set_task_state(curr, TASK_UNINTERRUPTIBLE);
+	set_tsk_need_resched(curr);
+    }
+    write_unlock(&tasklist_lock);
     return HRTIMER_NORESTART;
 
 } 
@@ -196,7 +198,7 @@ EXPORT_SYMBOL_GPL(budget_timer_callback);
 
 //Callback function for timer restart
 enum hrtimer_restart period_timer_callback(struct hrtimer * timer) {
-
+    write_lock(&tasklist_lock);
     int overrun;
     ktime_t current_time ;
     ktime_t period ;
@@ -208,18 +210,17 @@ enum hrtimer_restart period_timer_callback(struct hrtimer * timer) {
     (curr->compute_time).tv_nsec = 0;
 
     //Restarting period and setting the timer to the period
-    current_time = ktime_get();
+    current_time = hrtimer_cb_get_time(&(curr->period_timer));
     period = timespec_to_ktime(curr->time_period);
     overrun = hrtimer_forward(timer, current_time, period);
     if (overrun < 0) {
 	printk("Error restarting T\n");
     }
-    
     //waking up the task
-     wake_up_process(curr);
+    wake_up_process(curr);
 
     printk("Time Period cback\n");
-
+    write_unlock(&tasklist_lock);
     return HRTIMER_RESTART;
 } 
 EXPORT_SYMBOL_GPL(period_timer_callback);
@@ -253,9 +254,11 @@ int log_data_point(struct task_struct * curr, struct timespec data){
 	}
 
 	printk("Data points collected\n");
+	write_unlock(&tasklist_lock);
+	
 	return -1;
     }
-    
+
     curr_offset = curr->buf_offset * sizeof(struct timespec);
     printk("Offset is %d\n", curr->buf_offset);
 
@@ -2925,6 +2928,11 @@ static void __sched_fork(struct task_struct *p)
     //Setting the logging to false
     p->is_log_enabled = 0;
 
+    //Initialzing spin lock : Assuming this function
+    //sets it to false
+    spin_lock_init(&p->task_spin_lock);
+
+
     INIT_LIST_HEAD(&p->se.group_node);
 
 #ifdef CONFIG_SCHEDSTATS
@@ -4400,6 +4408,7 @@ static void __sched __schedule(void)
     struct timespec diff; //temp variable
     struct timespec temp; //temp variable
     ktime_t time_remaining; //temp variable
+    unsigned long flagone;
 
 need_resched:
     preempt_disable();
@@ -4455,77 +4464,101 @@ need_resched:
 	++*switch_count;
 
 
-	//OUR FUCKUPS for Lab2 Part 1 START HERE....
-	/*Getting the current time in order to compute exec time of prev
-	  task being swapped out*/
-	getrawmonotonic( &(t1) );
-
-	/*Getting the difference of current time and swap in time for prev task*/
-	diff = timespec_sub (t1 , prev->exec_time);
-
-	/*Adding the difference to compute time*/
-	prev->compute_time = timespec_add(prev->compute_time , diff);
-
-	getrawmonotonic( &(next->exec_time) );
-	//..END HERE
-
-
-
-
-	//Fuckups for Lab2 continue here
-
-	// We check if budget time has been set by the user. If yes then we go ahead and cancel
-	// the task that is being swapped out's timer 
-	if (((prev->budget_time).tv_sec >= 0) && ((prev->budget_time).tv_nsec >= 0)) {
-
-	    //.....CODE SNIPPET TO CANCEL A BUDGET TIMER IF IT EXIST FOR GIVEN TASK....
-	    // If this syscall returns 0 or 1 then timer is succesfully cancelled , 
-	    //   if -1 then our handler sends a signal to the process that violates it budget time anyway 
-	    //printk("Trying to cancel prev's timer\n");
-	    if(hrtimer_cancel(&(prev->budget_timer)) == 0){
-		//printk("Budget timer for %u in-active\n", prev->pid);
-	    }
+	//Getting the current time in order to compute exec time of prev
+	//  task being swapped out
+	if ((prev->is_budget_set == 1) || (prev->is_log_enabled == 1)) {
+	    getrawmonotonic( &(t1) );
 	}
+
+	if (prev->is_budget_set == 1) {
+
+	    //Spinlocking over prev task
+	    spin_lock_irqsave(&(prev->task_spin_lock),flagone);
+	    //Getting the difference of current time and swap in time for prev task
+	    diff = timespec_sub (t1 , prev->exec_time);
+	    //Trying to cancel previous budget timer
+	    if(hrtimer_try_to_cancel(&(prev->budget_timer)) == -1){ 
+		printk("Budget timer for %u in callback\n", prev->pid);
+	    }
+	    //Adding the difference to compute time
+	    prev->compute_time = timespec_add(prev->compute_time , diff);
+	    spin_unlock_irqrestore(&(prev->task_spin_lock),flagone);
+
+	}
+
+	if(prev->is_log_enabled == 1 && prev->buf_offset != 0){
+
+	    spin_lock_irqsave(&(prev->task_spin_lock),flagone);
+	    //Getting the difference of current time and swap in time for prev task
+	    diff = timespec_sub (t1 , prev->exec_time);
+	    //Logs the compute time of the system
+	    log_data_point(prev, diff);
+	    spin_unlock_irqrestore(&(prev->task_spin_lock),flagone);
+	}
+
+
+	//Setting exectimestamp for task before it starts RUNNING
+	if ((next->is_budget_set == 1) || (next->is_log_enabled == 1)) {
+	    spin_lock_irqsave(&(next->task_spin_lock),flagone);
+	    getrawmonotonic( &(next->exec_time) );
+	    spin_unlock_irqrestore(&(next->task_spin_lock),flagone);
+	}
+
 
 	// We check if budget time for "next" has been set by the user. If yes then we will go
 	// ahead to see if computation time exceeds budget time 
-	if (((next->budget_time).tv_sec >= 0) && ((next->budget_time).tv_nsec >= 0)) {
+	if (next->is_budget_set == 1) {
+
+	    spin_lock_irqsave(&(next->task_spin_lock),flagone);
+
 
 	    //Check if budget time is STILL greater than compute time for the task
-	    if (timespec_compare(&(next->budget_time) , &(next->compute_time)) == 1) {
-
-		// FIX ME : Check if this does a deep copy
-		// If budget time > compute time set timer for (budget - compute) 
+	    // If budget time > compute time set timer for (budget - compute) 
+	    if (timespec_compare(&(next->budget_time) , &(next->compute_time))> 0) {
 		temp = timespec_sub(next->budget_time , next->compute_time);
 		time_remaining = timespec_to_ktime(temp);
-
-		printk("RemT is %ld s and %ld ns \n", temp.tv_sec, temp.tv_nsec);
-
-		// Starting "next"'s budget_timer  with a value of time_remaining 
-		if(hrtimer_start(&(next->budget_timer), time_remaining, HRTIMER_MODE_REL) == 1) {	
-		    printk("Could not restart budget timer for task %d",next->pid);
+		//	printk("RemT is %ld s and %ld ns \n", temp.tv_sec, temp.tv_nsec);
+		
+		//If budget is smaller than a threshold than make ut sleep here
+		if ((temp.tv_sec == 0) && (temp.tv_nsec <= 10000)) {
+		    printk("Force sleep for %d\n",next->pid);
+		    //	    printk("CT is %ld s and %ld ns \n", (next->compute_time).tv_sec, (next->compute_time).tv_nsec);
+		    //Since the budget has expired we add the task to its own wait queue
+		    set_task_state(next, TASK_UNINTERRUPTIBLE);
+		    set_tsk_need_resched(next);
 		}
-
-
+		else {
+		    // Starting "next"'s budget_timer  with a value of time_remaining 
+		    if(hrtimer_start(&(next->budget_timer), time_remaining, HRTIMER_MODE_REL) == 1) {	
+			printk("Could not restart budget timer for task %d",next->pid);
+		    }
+		}
 	    }
-	    else{
+	    else if (next->state != TASK_UNINTERRUPTIBLE){
 		//Else if budget is smaller (which should ideally never happen)
 		//send signal to process to be killed
-                printk("Budget exceeded for %d\n",next->pid);
-
+		printk("Budget exceeded for %d\n",next->pid);
+		//	printk("CT is %ld s and %ld ns \n", (next->compute_time).tv_sec, (next->compute_time).tv_nsec);
+		//Since the budget has expired we add the task to its own wait queue
+		set_task_state(next, TASK_UNINTERRUPTIBLE);
+		set_tsk_need_resched(next);
 	    }
 
-	}   
+	    spin_unlock_irqrestore(&(next->task_spin_lock),flagone);
 
 	if(prev->is_log_enabled == 1){
 	    //Logs the compute time of the system
 	    log_data_point(prev, diff);
 	}
 
+	//Logs the timestamp of the system
 	if(next->is_log_enabled == 1){
-	    //Logs the timestamp of the system
+	    spin_lock_irqsave(&(next->task_spin_lock),flagone);
 	    log_data_point(next, next->exec_time);
+	    spin_unlock_irqrestore(&(next->task_spin_lock),flagone);
 	}
+
+
 
 	context_switch(rq, prev, next); /* unlocks the rq */
 	/*
