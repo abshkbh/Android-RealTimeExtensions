@@ -4,6 +4,7 @@
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/time.h>
+#include <linux/spinlock.h>
 #include <asm/uaccess.h>
 
 enum hrtimer_restart budget_timer_callback(struct hrtimer * timer);
@@ -14,17 +15,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     struct task_struct * curr;
     ktime_t p;
     struct sched_param rt_sched_parameters;
-
-    //Error check for seeing if budget & period specs are safe to read
-    /*    if (!access_ok(VERIFY_READ , &budget , sizeof(struct timespec))) {
-	  printk("Unsafe budget memory area\n");
-	  return -EFAULT;
-	  } 
-	  if (!access_ok(VERIFY_READ , &period , sizeof(struct timespec))) {
-	  printk("Unsafe period memory area\n");
-	  return -EFAULT;
-	  } */
-
+    unsigned long flags;
 
     //Error checks for input arguments
     if (!((budget.tv_sec > 0) || (budget.tv_nsec > 0))) {
@@ -48,10 +39,11 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     }
 
 
-    if(timespec_compare(&budget, &period) != -1){
+    if(timespec_compare(&budget, &period) >= 0){
 	printk("Budget >= Period\n");
 	return -EINVAL;
     }
+
 
     //Finding task struct given its pid
     read_lock(&tasklist_lock);
@@ -61,6 +53,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	printk("Couldn't find task\n");
 	return -ESRCH;
     }
+
+    //Lock taken to make syscall non-preemptible
+    spin_lock_irqsave(&(curr->task_spin_lock),flags);
 
     read_lock(&tasklist_lock);
     //First check if a period timer already exists from a previous edition of this syscall.
@@ -91,6 +86,11 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     read_unlock(&tasklist_lock);
     
     write_lock(&tasklist_lock);
+
+    //Setting flag
+    curr->is_budget_set = 1;
+
+    //Setting periods and budgets
     (curr->time_period).tv_sec = period.tv_sec;
     (curr->time_period).tv_nsec = period.tv_nsec;
     
@@ -102,7 +102,8 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     curr->rt_priority = rt_prio;
     rt_sched_parameters.sched_priority = rt_prio;
     sched_setscheduler(curr,SCHED_FIFO,&rt_sched_parameters);
-    
+    set_tsk_need_resched(curr);
+
     write_unlock(&tasklist_lock);
 
     read_lock(&tasklist_lock);
@@ -114,6 +115,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     read_unlock(&tasklist_lock);
 
     printk("User RT Prio for task %d is %d\n",pid,curr->rt_priority);
+   
+    //Unlocking spin lock
+    spin_unlock_irqrestore(&(curr->task_spin_lock),flags);
 
     return 0;
 }
