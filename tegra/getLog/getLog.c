@@ -7,7 +7,7 @@
 #include <linux/kernel.h>
 #include <linux/sched.h> /* For task_struct */
 #include <linux/time.h>
-#include <linux/vmalloc.h>
+#include <linux/slab.h>
 #include <asm/uaccess.h>
 
 asmlinkage int sys_getLog( pid_t pid, char * buf ){
@@ -36,11 +36,12 @@ asmlinkage int sys_getLog( pid_t pid, char * buf ){
     printk("In get log, size is %d\n", size);
 
     if(copy_to_user(buf, curr->buf, size) != 0){
-	vfree(curr->buf);
+	kfree(curr->buf);
 	return -EFAULT;
     }
 
-    vfree(curr->buf);
+    kfree(curr->buf);
     return size;
 
+    return 0;
 }

@@ -7,12 +7,13 @@
 #include <linux/kernel.h>
 #include <linux/sched.h> /* For task_struct */
 #include <linux/time.h>
-#include <linux/vmalloc.h>
+#include <linux/slab.h>
 
 asmlinkage int sys_setLogging( pid_t log_pid, pid_t user_pid, int no_data_points ){
 
     struct task_struct * curr;
     int size;
+    unsigned long flags;
 
     if(log_pid <= 0){
 	printk("Logging pid is invalid\n");
@@ -30,38 +31,33 @@ asmlinkage int sys_setLogging( pid_t log_pid, pid_t user_pid, int no_data_points
 
     read_lock(&tasklist_lock);
     curr = (struct task_struct *) find_task_by_vpid(log_pid);
-    read_unlock(&tasklist_lock);
-
     if(curr == NULL){
 	printk("Couldn't find task\n");
+	read_unlock(&tasklist_lock);
 	return -ESRCH;
     }
-
     if(curr->is_log_enabled == 1){
 	printk("Logging already enabled for %d\n", curr->pid);
+	read_unlock(&tasklist_lock);
 	return -EINVAL;
     }
-
     size = no_data_points * 2 * sizeof(struct timespec);
+    read_unlock(&tasklist_lock);
 
     //Setting up all the parameters in the task structure for logging
-    write_lock(&tasklist_lock);
+    spin_lock_irqsave(&(curr->task_spin_lock),flags);
+    
     curr->user_pid = user_pid;
-    curr->buf = vmalloc(size);
-    if(curr->buf == NULL){
-	printk("Cant allocate space\n");
-	write_unlock(&tasklist_lock);
-	return -1;	
-    }
+    curr->buf = kmalloc(size, GFP_KERNEL);
     memset(curr->buf, '0', size);
     curr->is_log_enabled = 1;
     curr->buf_offset = 0;
     curr->no_data_points = no_data_points;
-    write_unlock(&tasklist_lock);
 
     printk("Buffer : %s\n", curr->buf);
-
     printk("Exiting logging syscall\n");
     
+    spin_unlock_irqrestore(&(curr->task_spin_lock),flags);
+
     return 0;
 }

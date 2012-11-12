@@ -1585,6 +1585,12 @@ struct task_struct {
 	/*It saves the periodic Time for each task*/
 	struct timespec time_period;
 
+        /* Is setProcessBudget called for this syscall */
+	char is_budget_set;
+
+        /* Task spinlock for protection */
+	spinlock_t task_spin_lock;
+
 	/*It saves the periodic Time for each task*/
 	struct hrtimer period_timer;
 
