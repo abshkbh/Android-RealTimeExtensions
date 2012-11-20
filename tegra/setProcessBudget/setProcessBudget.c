@@ -56,19 +56,14 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     }
 
     //Finding task struct given its pid
-    //read_lock(&tasklist_lock);
     curr = (struct task_struct *) find_task_by_vpid(pid);
-    //read_unlock(&tasklist_lock);
     if(curr == NULL){
 	printk("Couldn't find task\n");
 	write_unlock(&tasklist_lock);
 	return -ESRCH;
     }
 
-    //Lock taken to make syscall non-preemptible
-    spin_lock_irqsave(&(curr->task_spin_lock),flags);
 
-    //read_lock(&tasklist_lock);
     //First check if a period timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.
     //If this syscall returns 0 or 1 then timer is succesfully cancelled  
@@ -94,9 +89,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
 	hrtimer_init(&(curr->budget_timer),CLOCK_MONOTONIC,HRTIMER_MODE_REL);
 	(curr->budget_timer).function = &budget_timer_callback;
     }
-    //read_unlock(&tasklist_lock);
     
-    //write_lock(&tasklist_lock);
 
     //Setting flag
     curr->is_budget_set = 1;
@@ -118,20 +111,15 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     //Adding the task in our periodic linked list
     add_periodic_task(&(curr->periodic_task));
 
-    //write_unlock(&tasklist_lock);
-
-    //read_lock(&tasklist_lock);
     //Start Timer
     p = timespec_to_ktime(period);
     if(hrtimer_start(&(curr->period_timer), p, HRTIMER_MODE_REL) == 1) {	
 	printk("Could not restart budget timer for task %d", pid);
     }
-    //read_unlock(&tasklist_lock);
 
     printk("User RT Prio for task %d is %d\n",pid,curr->rt_priority);
    
     //Unlocking spin lock
-    spin_unlock_irqrestore(&(curr->task_spin_lock),flags);
     write_unlock(&tasklist_lock);
 
     return 0;

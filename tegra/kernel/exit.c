@@ -898,9 +898,10 @@ NORET_TYPE void do_exit(long code)
     int group_dead;
     unsigned long flags;
 
-    //Cancelling the timer
-    spin_lock_irqsave(&(current->task_spin_lock),flags);
     if(current->is_budget_set == 1) {
+	//Cancelling the timer
+	spin_lock_irqsave(&(current->task_spin_lock),flags);
+	
 	current->is_budget_set = 0;
 	if (hrtimer_try_to_cancel(&(current->period_timer)) != 1) {
 	    printk("Exit : Period Timer for %d is either not active or not callback",current->pid); 
@@ -909,12 +910,13 @@ NORET_TYPE void do_exit(long code)
 	    printk("Exit : Budget Timer for %d is either not active or not callback",current->pid); 
 	}
 
+	spin_unlock_irqrestore(&(current->task_spin_lock),flags);
+
 	//Removing the task from the periodic linked list
 	write_lock(&tasklist_lock);
 	del_periodic_task(&(tsk->periodic_task));
 	write_unlock(&tasklist_lock);
     }
-    spin_unlock_irqrestore(&(current->task_spin_lock),flags);
 
 
     profile_task_exit(tsk);
