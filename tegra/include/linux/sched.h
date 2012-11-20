@@ -42,6 +42,9 @@
 /* Can be ORed in to make sure the process is reverted back to SCHED_NORMAL on fork */
 #define SCHED_RESET_ON_FORK     0x40000000
 
+//Our scale up factor to avoid the floating point arithmetic
+#define SCALE_UP_FACTOR         1000
+
 #ifdef __KERNEL__
 
 struct sched_param {
@@ -1609,7 +1612,21 @@ struct task_struct {
 	/*No of data points to be collected*/
 	int no_data_points;
 
+	/* List for sysclock as well as pm clock*/
+	struct list_head periodic_task;
+
 };
+
+struct task_ct_struct{
+    long budget;
+    long period;
+};
+
+
+#define GET_UTIL_BOUND(n) util_bound[(n)] 
+extern struct list_head periodic_task_head;
+extern int periodic_tasks_size;
+extern long util_bound[11];
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */
 #define tsk_cpus_allowed(tsk) (&(tsk)->cpus_allowed)

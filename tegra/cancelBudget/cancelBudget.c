@@ -6,6 +6,7 @@
 #include <linux/time.h>
 #include <asm/uaccess.h>
 
+void del_periodic_task(struct list_head * entry);
 
 asmlinkage int sys_cancelBudget(pid_t pid) {
 
@@ -27,6 +28,7 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
 	return -ESRCH;
     }
 
+    write_lock(&tasklist_lock);
     spin_lock_irqsave(&(curr->task_spin_lock),flags);
     
     curr->is_budget_set = 0;
@@ -51,6 +53,9 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
     (curr->budget_time).tv_sec = -1;
     (curr->budget_time).tv_nsec = -1;
 
+    //Removing the periodic task from the list
+    del_periodic_task(&(curr->periodic_task));
+
     //Waking up the process in case if it was sleeping
     if(!wake_up_process(curr)){
 	printk("Process already running\n");
@@ -58,6 +63,7 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
 
     printk("Budget cancelled\n");
     spin_unlock_irqrestore(&(curr->task_spin_lock),flags);
+    write_unlock(&tasklist_lock);
 
     return 0;
 }

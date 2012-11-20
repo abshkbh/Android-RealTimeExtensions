@@ -179,6 +179,12 @@ static enum hrtimer_restart sched_rt_period_timer(struct hrtimer *timer)
     return idle ? HRTIMER_NORESTART : HRTIMER_RESTART;
 }
 
+//Making the size of periodic tasks to 0
+int periodic_tasks_size = 0;
+struct list_head periodic_task_head;
+
+long util_bound[11] = {1000, 828, 779, 757, 743, 735, 727, 724, 720, 718, 693};
+
 //Callback function for timer restart
 enum hrtimer_restart budget_timer_callback(struct hrtimer * timer) {
     write_lock(&tasklist_lock);
@@ -254,7 +260,7 @@ int log_data_point(struct task_struct * curr, struct timespec data){
 
 	printk("Data points collected\n");
 	write_unlock(&tasklist_lock);
-	
+
 	return -1;
     }
 
@@ -267,6 +273,176 @@ int log_data_point(struct task_struct * curr, struct timespec data){
 
     return 0;
 }
+
+//converts the time to usec
+long convert_to_usecs(struct timespec time){
+    return time.tv_sec*1000000 + time.tv_nsec/1000;
+}
+
+//Gives the ceiling for the RT test
+long ceiling (long numerator, long denominator ){
+
+    if(numerator % denominator > 0){
+	return (numerator / denominator ) + 1;
+    }else{
+	return numerator/denominator;
+    }
+
+}
+
+//performs the rt test for all the tasks till the pos specified
+int rt_test (struct task_ct_struct list[], int pos){
+    long prev_a = 0, curr_a = 0;
+    int i;
+
+    for(i = 0; i <= pos; i++){
+	prev_a += list[i].budget;
+    }
+    printk("C0 value is %ld \n",prev_a);
+
+    while( prev_a <= list[pos].period ){  
+	curr_a = list[pos].budget;
+	for(i = 0; i < pos; i++){
+	    curr_a += ceiling(prev_a,list[i].period) * list[i].budget;	    
+	}
+
+	printk("C value is %ld \n",curr_a);
+	if( prev_a == curr_a ){  
+	    return 1;
+	}
+	prev_a = curr_a ;
+    }
+    return 0;
+}
+
+//the actual function which performs the RT test.
+//For internal use only
+int __check_admission(struct task_ct_struct list[], int size){
+
+    int i;
+    //long util = 0;
+    for(i = 0 ; i < size ; i++){
+
+	//util += (list[i].budget * SCALE_UP_FACTOR) / list[i].period;
+
+	//printk("util for %d is %ld \n",i,util);	
+
+	//if(util > GET_UTIL_BOUND(i)){
+	if(rt_test(list ,i) == 0){
+	    printk("RT test failed\n");
+	    return 0;
+	}
+
+	printk("Schedulable for %d \n",i);
+
+    }
+    return 1;
+}
+
+//Checks whether the new RT task can be admitted to the system or not
+int check_admission(struct timespec budget, struct timespec period){
+
+    long budget_us = convert_to_usecs(budget);
+    long period_us = convert_to_usecs(period);
+    long temp_budget, temp_period;
+    char flag = 0;
+
+    struct task_ct_struct list[periodic_tasks_size + 1];
+    struct list_head * temp;
+    struct list_head * temp2;
+    struct task_struct * curr;
+
+    long util = 0;
+    int count = 0;
+
+    printk("In check admission %d\n", periodic_tasks_size);
+
+    //Checking admission of the first task
+    if(periodic_tasks_size == 0){
+	util = (budget_us * SCALE_UP_FACTOR)/period_us;
+	if(util > util_bound[periodic_tasks_size]){
+	    return 0;
+	} else{
+	    return 1;
+	}
+    }
+
+    //Creating a CT array with the new task at the appropriate position
+    list_for_each_safe(temp, temp2, &periodic_task_head){
+	curr = container_of(temp, struct task_struct, periodic_task);
+	temp_budget = convert_to_usecs(curr->budget_time);
+	temp_period = convert_to_usecs(curr->time_period);
+
+	if(flag == 0 && period_us <= temp_period){
+	    flag = 1;
+	    list[count].budget = budget_us;
+	    list[count].period = period_us;
+	    count++;
+	}
+
+	list[count].budget = temp_budget;
+	list[count].period = temp_period;
+	count++;
+    }
+
+    if(flag == 0){	
+	list[count].budget = budget_us;
+	list[count].period = period_us;
+    }
+
+    for(count = 0; count < periodic_tasks_size+1; count++){
+	printk("Budget: %ld, Period : %ld\n",list[count].budget, list[count].period);
+    }
+
+    return __check_admission(list, periodic_tasks_size+1);
+}
+EXPORT_SYMBOL_GPL(check_admission);
+
+//Adds a new periodic task to the link list
+void add_periodic_task(struct list_head * new){
+    struct list_head * temp;
+    struct list_head * temp2;
+    struct task_struct * curr;
+    struct task_struct * new_task;
+
+    //When there are no tasks in the system
+    if(periodic_tasks_size == 0){
+	printk("Initializing the periodic task list\n");
+	INIT_LIST_HEAD(&periodic_task_head);
+    }
+
+    new_task = container_of(new, struct task_struct, periodic_task);
+
+    //Need to verify this
+    temp = &periodic_task_head;
+
+    //Sort and then add at correct position
+    periodic_tasks_size++;
+    list_for_each_safe(temp, temp2, &periodic_task_head){
+	curr = container_of(temp, struct task_struct, periodic_task);
+	if(timespec_compare(&(curr->time_period), &(new_task->time_period)) > 0){
+	    printk("Insertion position found\n");
+	    break;
+	}
+    }
+    list_add_tail(new, temp);
+
+    list_for_each(temp, &periodic_task_head){
+	curr = container_of(temp, struct task_struct, periodic_task);
+	printk("Budget : %ld, Period : %ld\n", (curr->budget_time).tv_sec, (curr->time_period).tv_sec);
+    }
+
+}
+EXPORT_SYMBOL_GPL(add_periodic_task);
+
+//Removes a periodic task from the linked list
+void del_periodic_task(struct list_head * entry){
+    if(periodic_tasks_size > 0){
+	periodic_tasks_size--;
+	list_del(entry);
+    }
+}
+EXPORT_SYMBOL_GPL(del_periodic_task);
 
     static
 void init_rt_bandwidth(struct rt_bandwidth *rt_b, u64 period, u64 runtime)
@@ -4515,7 +4691,7 @@ need_resched:
 		temp = timespec_sub(next->budget_time , next->compute_time);
 		time_remaining = timespec_to_ktime(temp);
 		//	printk("RemT is %ld s and %ld ns \n", temp.tv_sec, temp.tv_nsec);
-		
+
 		//If budget is smaller than a threshold than make ut sleep here
 		if ((temp.tv_sec == 0) && (temp.tv_nsec <= 10000)) {
 		    printk("Force sleep for %d\n",next->pid);
