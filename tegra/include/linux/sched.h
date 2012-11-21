@@ -1624,9 +1624,6 @@ struct task_ct_struct{
 
 
 #define GET_UTIL_BOUND(n) util_bound[(n)] 
-extern struct list_head periodic_task_head;
-extern int periodic_tasks_size;
-extern long util_bound[11];
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */
 #define tsk_cpus_allowed(tsk) (&(tsk)->cpus_allowed)

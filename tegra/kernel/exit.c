@@ -895,27 +895,36 @@ static inline void check_stack_usage(void) {}
 NORET_TYPE void do_exit(long code)
 {
     struct task_struct *tsk = current;
+    struct task_struct *temp = current;
     int group_dead;
-    unsigned long flags;
 
-    if(current->is_budget_set == 1) {
-	//Cancelling the timer
-	spin_lock_irqsave(&(current->task_spin_lock),flags);
-	
-	current->is_budget_set = 0;
-	if (hrtimer_try_to_cancel(&(current->period_timer)) != 1) {
-	    printk("Exit : Period Timer for %d is either not active or not callback",current->pid); 
-	}
-	if (hrtimer_try_to_cancel(&(current->budget_timer)) != 1) {
-	    printk("Exit : Budget Timer for %d is either not active or not callback",current->pid); 
-	}
+    if(tsk->is_budget_set == 1) {
 
-	spin_unlock_irqrestore(&(current->task_spin_lock),flags);
-
-	//Removing the task from the periodic linked list
 	write_lock(&tasklist_lock);
-	del_periodic_task(&(tsk->periodic_task));
+
+	tsk->is_budget_set = 0;
+	//If you are the master thread
+	//disable this on all children threads
+	if (tsk->pid == tsk->tgid) {
+
+	    do{
+		temp->is_budget_set = 0;
+	    }while_each_thread(tsk, temp);
+
+	    if (hrtimer_try_to_cancel(&(current->period_timer)) != 1) {
+		printk("Exit : Period Timer for %d is either not active or not callback",current->pid); 
+	    }
+	    if (hrtimer_try_to_cancel(&(current->budget_timer)) != 1) {
+		printk("Exit : Budget Timer for %d is either not active or not callback",current->pid); 
+	    }
+
+	    del_periodic_task(&(tsk->periodic_task));
+
+	}
+
+
 	write_unlock(&tasklist_lock);
+
     }
 
 

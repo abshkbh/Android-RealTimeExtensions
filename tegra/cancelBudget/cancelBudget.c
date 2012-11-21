@@ -11,7 +11,7 @@ void del_periodic_task(struct list_head * entry);
 asmlinkage int sys_cancelBudget(pid_t pid) {
 
     struct task_struct * curr;
-    unsigned long flags;
+    struct task_struct * temp;
 
     //Error checks for input arguments
     if (pid <= 0) {
@@ -20,18 +20,22 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
     }
 
     //Finding task struct given its pid
-    read_lock(&tasklist_lock);
-    curr = (struct task_struct *) find_task_by_vpid(pid);
-    read_unlock(&tasklist_lock);
+    write_lock(&tasklist_lock);
+   
+   curr = (struct task_struct *) find_task_by_vpid(pid);
     if(curr == NULL){
 	printk("Couldn't find task\n");
+	write_unlock(&tasklist_lock);
 	return -ESRCH;
     }
 
-    write_lock(&tasklist_lock);
-    spin_lock_irqsave(&(curr->task_spin_lock),flags);
-    
-    curr->is_budget_set = 0;
+
+    temp = curr;
+    do {
+	temp->is_budget_set = 0;
+	printk("Cancelled Budget for %d\n",temp->pid);
+    }while_each_thread(curr,temp);
+
     //First check if a period timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.
     // If this syscall returns 0 or 1 then timer is succesfully cancelled  
@@ -53,17 +57,23 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
     (curr->budget_time).tv_sec = -1;
     (curr->budget_time).tv_nsec = -1;
 
+
     //Removing the periodic task from the list
     del_periodic_task(&(curr->periodic_task));
 
     //Waking up the process in case if it was sleeping
-    if(!wake_up_process(curr)){
-	printk("Process already running\n");
-    }
+    temp = curr;
+    do {
+	if(!wake_up_process(temp)){
+	    printk("Process already running %d\n",temp->pid);
+	}
+    }while_each_thread(curr,temp);
 
     printk("Budget cancelled\n");
-    spin_unlock_irqrestore(&(curr->task_spin_lock),flags);
+    
     write_unlock(&tasklist_lock);
 
     return 0;
 }
+
+

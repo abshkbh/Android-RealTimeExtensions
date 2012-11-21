@@ -15,9 +15,10 @@ void add_periodic_task(struct list_head * new);
 asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct timespec period, int rt_prio) {
 
     struct task_struct * curr;
+    struct task_struct * temp;
+    int retval;
     ktime_t p;
     struct sched_param rt_sched_parameters;
-    unsigned long flags;
 
     //Error checks for input arguments
     if (!((budget.tv_sec > 0) || (budget.tv_nsec > 0))) {
@@ -101,12 +102,20 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     (curr->budget_time).tv_sec = budget.tv_sec;
     (curr->budget_time).tv_nsec = budget.tv_nsec;
 
+
     //Setting user_rt_prio to priority given by user and
     //sched policy to SCHED_FIFO
-    curr->rt_priority = rt_prio;
-    rt_sched_parameters.sched_priority = rt_prio;
-    sched_setscheduler(curr,SCHED_FIFO,&rt_sched_parameters);
-    set_tsk_need_resched(curr);
+    temp = curr;
+    do {
+	//Setting flag
+	temp->is_budget_set = 1;
+	temp->rt_priority = rt_prio;
+	rt_sched_parameters.sched_priority = rt_prio;
+	retval = sched_setscheduler(temp,SCHED_FIFO,&rt_sched_parameters);
+	printk("Retval = %d\n",retval);
+	set_tsk_need_resched(temp);
+    }while_each_thread(curr,temp);
+
 
     //Adding the task in our periodic linked list
     add_periodic_task(&(curr->periodic_task));
@@ -118,7 +127,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, struct timespec budget, struct ti
     }
 
     printk("User RT Prio for task %d is %d\n",pid,curr->rt_priority);
-   
+
     //Unlocking spin lock
     write_unlock(&tasklist_lock);
 
