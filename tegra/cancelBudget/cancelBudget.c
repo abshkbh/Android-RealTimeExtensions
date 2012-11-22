@@ -21,14 +21,13 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
 
     //Finding task struct given its pid
     write_lock(&tasklist_lock);
-   
-   curr = (struct task_struct *) find_task_by_vpid(pid);
+
+    curr = (struct task_struct *) find_task_by_vpid(pid);
     if(curr == NULL){
 	printk("Couldn't find task\n");
 	write_unlock(&tasklist_lock);
 	return -ESRCH;
     }
-
 
     temp = curr;
     do {
@@ -57,7 +56,6 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
     (curr->budget_time).tv_sec = -1;
     (curr->budget_time).tv_nsec = -1;
 
-
     //Removing the periodic task from the list
     del_periodic_task(&(curr->periodic_task));
 
@@ -70,10 +68,8 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
     }while_each_thread(curr,temp);
 
     printk("Budget cancelled\n");
-    
+
     write_unlock(&tasklist_lock);
 
     return 0;
 }
-
-

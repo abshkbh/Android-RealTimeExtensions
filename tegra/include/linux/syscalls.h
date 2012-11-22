@@ -846,7 +846,7 @@ asmlinkage long sys_open_by_handle_at(int mountdirfd,
 asmlinkage long sys_setns(int fd, int nstype);
 asmlinkage long sys_setns(int fd, int nstype);
 asmlinkage int sys_getProcessComputeTime(pid_t pid);
-asmlinkage int sys_setProcessBudget(pid_t pid,struct timespec budget, struct timespec period, int rt_prio);
+asmlinkage int sys_setProcessBudget(pid_t pid,unsigned long budget, struct timespec period);
 asmlinkage int sys_cancelBudget(pid_t pid);
 asmlinkage int sys_waitUntilNextPeriod(pid_t pid);
 asmlinkage int sys_mycall(int num1,int num2,long long *sum);
