@@ -13,14 +13,16 @@ enum hrtimer_restart period_timer_callback(struct hrtimer * timer);
 int check_admission(struct timespec budget, struct timespec period);
 void add_periodic_task(struct list_head * new);
 void del_periodic_task(struct list_head * entry);
-long sysclock();
+long sysclock(unsigned long max_frequency);
+void apply_sysclock(unsigned long frequency, unsigned long max_frequency);
 
 asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct timespec period) {
 
     struct task_struct * curr;    
     struct task_struct * temp;
     unsigned long temp_time;
-    unsigned long frequency = cpufreq_quick_get(0) / 1000 ; //Getiing frequency in MHz
+    struct cpufreq_policy * lastcpupolicy = cpufreq_cpu_get(0);
+    unsigned long max_frequency = (lastcpupolicy->cpuinfo).max_freq / 1000 ; //Getting MAX frequency in MHz
     unsigned long sysclock_freq;
     ktime_t p;
     struct timespec task_budget;
@@ -41,10 +43,10 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     write_lock(&tasklist_lock);
 
     //First get budget from cycles in (millions) / current CPU frequency in (Mhz) * 1000 ns
-    temp_time = ((budget * SCALE) / (frequency)) * 1000;
+    temp_time = ((budget * SCALE) / (max_frequency)) * 1000;
     task_budget = ns_to_timespec(temp_time);
 
-    printk("Time in ns = %lu and frequency = %lu Mhz\n",temp_time,frequency);
+    printk("Time in ns = %lu and frequency = %lu Mhz\n",temp_time,max_frequency);
     printk("Taks struct budget %ldsec and %ldnsec\n",task_budget.tv_sec,task_budget.tv_nsec);
     
     if(timespec_compare(&task_budget, &period) >= 0){
@@ -64,7 +66,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     if(curr == NULL){
 	printk("Couldn't find task\n");
 	write_unlock(&tasklist_lock);
-urn -ESRCH;
+	return -ESRCH;
     }
 
     if(curr->is_budget_set == 1){
@@ -105,8 +107,8 @@ urn -ESRCH;
     (curr->time_period).tv_nsec = period.tv_nsec;
 
     //Setting periods and budgets
-    (curr->budget_time).tv_sec = task_budget.tv_sec;
-    (curr->budget_time).tv_nsec = task_budget.tv_nsec;
+    (curr->min_budget_time).tv_sec = task_budget.tv_sec;
+    (curr->min_budget_time).tv_nsec = task_budget.tv_nsec;
 
     //Setting user_rt_prio to priority given by user and
     //sched policy to SCHED_FIFO
@@ -121,13 +123,15 @@ urn -ESRCH;
 	//set_tsk_need_resched(temp);
     }while_each_thread(curr,temp);
 
-
     //Adding the task in our periodic linked list
     add_periodic_task(&(curr->periodic_task));
 
     //Getting the sys clock frequency
-    sysclock_freq = sysclock();
-    printk("Sysclock frequency is %lu\n", sysclock_freq);
+    sysclock_freq = sysclock(max_frequency);
+    printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
+    apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq);
+
+    //Loop through all the RT tasks and change the budget
 
     //Start Timer
     p = timespec_to_ktime(period);

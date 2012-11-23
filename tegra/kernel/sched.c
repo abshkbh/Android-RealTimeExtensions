@@ -73,6 +73,8 @@
 #include <linux/slab.h>
 #include <linux/cpuacct.h>
 
+#include <linux/cpufreq.h>
+
 #include <asm/tlb.h>
 #include <asm/irq_regs.h>
 #include <asm/mutex.h>
@@ -125,6 +127,10 @@
  * single value that denotes runtime == period, ie unlimited time.
  */
 #define RUNTIME_INF	((u64)~0ULL)
+
+
+//Our declaration to use for division
+uint32_t __div64_32(uint64_t *dividend, uint32_t divisor);
 
 static inline int rt_policy(int policy)
 {
@@ -388,7 +394,7 @@ int check_admission(struct timespec budget, struct timespec period){
     //Creating a CT array with the new task at the appropriate position
     list_for_each_safe(temp, temp2, &periodic_task_head){
 	curr = container_of(temp, struct task_struct, periodic_task);
-	temp_budget = convert_to_usecs(curr->budget_time);
+	temp_budget = convert_to_usecs(curr->min_budget_time);
 	temp_period = convert_to_usecs(curr->time_period);
 
 	if(flag == 0 && period_us <= temp_period){
@@ -541,9 +547,9 @@ int make_deadline_array(struct task_ct_struct * list, int size, long ** deadline
 
 }
 
-unsigned long get_max(long * list, int size){
+unsigned long get_max(uint64_t * list, int size){
     int i ;
-    long max = list[0] ;
+    uint64_t max = list[0] ;
 
     for(i=1 ; i < size ; i++){
 	if(list[i] > max ){
@@ -554,24 +560,26 @@ unsigned long get_max(long * list, int size){
 }
 
 //Function for the actual sysclock algorithm
-unsigned long sysclock( void ) {
+//It has to be called when the task list is locked
+unsigned long sysclock(unsigned long max_frequency) {
 
     int i = 0;
     int j = 0, k = 0;
-    long min_freq[periodic_tasks_size]; //I feel so dirty doing this
-    long omega = 0;
-    long min = 1000000; 
+    uint64_t min_freq[periodic_tasks_size]; //I feel so dirty doing this
+    uint64_t omega = 0;
+    uint64_t min = 1000000; 
     long * deadlines;
     int num_deadlines;
     struct task_struct * curr;
     struct list_head * temp;
     struct task_ct_struct list[periodic_tasks_size];
+    unsigned long frequency;
 
     //Getting all the tasks
 
     list_for_each(temp, &periodic_task_head){
 	curr = container_of(temp, struct task_struct, periodic_task);
-	list[i].budget = convert_to_usecs(curr->budget_time);
+	list[i].budget = convert_to_usecs(curr->min_budget_time);
 	list[i].period = convert_to_usecs(curr->time_period);
 	i++;
     }
@@ -592,10 +600,12 @@ unsigned long sysclock( void ) {
 		omega = 0;
 		for(k = 0 ; k <= i ; k++){
 		    omega += ceiling(deadlines[j] , list[k].period) * list[k].budget;
-		}
-		omega = (omega * SCALE_UP_FACTOR) / deadlines[j];
+		}	
+		printk("%dth task at deadline %ld Omega before scaling is %llu\n",i , deadlines[j],(unsigned long long)omega);
+		omega = (omega * 1000000); 
+		__div64_32(&omega ,deadlines[j]);
 
-		printk("%dth task at deadline %ld Omega is %ld\n",i , deadlines[j],omega);
+		printk("%dth task at deadline %ld Omega is %llu\n",i , deadlines[j],(unsigned long long)omega);
 		if(omega < min ){
 		    min = omega;
 		}
@@ -604,12 +614,33 @@ unsigned long sysclock( void ) {
 
 	}
 	min_freq[i] = min;
-	printk("Min freq at %d is %ld \n",i,min);  
+	printk("Min freq at %d is %llu \n",i,(unsigned long long)min);  
     }
     kfree(deadlines);
-    return get_max(min_freq , periodic_tasks_size);
+    frequency = get_max(min_freq, periodic_tasks_size);
+    return (frequency * max_frequency)/1000 ;
 }
 EXPORT_SYMBOL_GPL(sysclock);
+
+//It applies the sysclock frequency on the cpu as well as 
+//changes the budget for all the RT tasks.
+void apply_sysclock(unsigned long frequency, unsigned long max_frequency){
+    struct list_head * temp;
+    struct task_struct * curr;
+    uint64_t updated_budget;
+    uint32_t max_freq = (uint32_t)max_frequency;
+
+    list_for_each(temp, &periodic_task_head){
+	curr = container_of(temp, struct task_struct, periodic_task);
+	updated_budget = (uint64_t)timespec_to_ns(&(curr->min_budget_time));
+	printk("Min Budget Time is %llu ns\n", (unsigned long long)updated_budget);
+	updated_budget *= (uint64_t)max_freq;
+	printk("Budget * Frequency is %llu ns\n", (unsigned long long)updated_budget);
+	__div64_32(&updated_budget, frequency);
+	printk("Budget * Frequency / Max Freq is %llu ns @ %lu kHz\n", (unsigned long long)updated_budget, frequency);
+	curr->budget_time = ns_to_timespec(updated_budget);
+    }
+}
 
     static
 void init_rt_bandwidth(struct rt_bandwidth *rt_b, u64 period, u64 runtime)
@@ -3264,6 +3295,9 @@ static void __sched_fork(struct task_struct *p)
     //Initializing budget time to -1
     (p->budget_time).tv_sec        = -1;
     (p->budget_time).tv_nsec       = -1;
+
+    (p->min_budget_time).tv_sec    = -1;
+    (p->min_budget_time).tv_nsec   = -1;
 
     //Setting the logging to false
     p->is_log_enabled = 0;
