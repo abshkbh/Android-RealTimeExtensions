@@ -465,7 +465,7 @@ int set_rt_priorities( ){
     struct list_head * temp;
     struct task_struct * temp2;
     struct task_struct * curr;
-    int rt_prio = 99, retval;
+    int rt_prio = 100, retval;
     struct timespec prev_deadline;
     struct sched_param rt_sched_parameters;
     
@@ -480,7 +480,10 @@ int set_rt_priorities( ){
 
     list_for_each(temp, &periodic_task_head){
 	curr = container_of(temp, struct task_struct, periodic_task);
-
+	
+	if (timespec_compare(&(curr->time_period),&(prev_deadline)) > 0) { 
+	    rt_prio--;
+	}
 	printk("Setting %d to rt_prio %d\n",curr->pid,rt_prio);
 	//Setting user_rt_prio to priority given by user and
 	//sched policy to SCHED_FIFO
@@ -494,9 +497,6 @@ int set_rt_priorities( ){
 	    set_tsk_need_resched(temp2);
 	}while_each_thread(curr,temp2);
 
-	if (timespec_compare(&(curr->time_period),&(prev_deadline)) > 0) { 
-	    rt_prio--;
-	}
 
 	//Never let rt_prio go less than zero i.e MIN_RT_PRIO
 	if(rt_prio < 0) {
