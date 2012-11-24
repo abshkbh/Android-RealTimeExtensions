@@ -14,7 +14,8 @@ int check_admission(struct timespec budget, struct timespec period);
 void add_periodic_task(struct list_head * new);
 void del_periodic_task(struct list_head * entry);
 long sysclock(unsigned long max_frequency);
-void apply_sysclock(unsigned long frequency, unsigned long max_frequency);
+int apply_sysclock(unsigned long frequency, unsigned long max_frequency);
+int set_rt_priorities(void);
 
 asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct timespec period) {
 
@@ -27,6 +28,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     ktime_t p;
     struct timespec task_budget;
     struct sched_param rt_sched_parameters;
+    unsigned int ret;
 
     //Error checks for input arguments
     if (!((period.tv_sec > 0) || (period.tv_nsec > 0))) {
@@ -110,26 +112,26 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     (curr->min_budget_time).tv_sec = task_budget.tv_sec;
     (curr->min_budget_time).tv_nsec = task_budget.tv_nsec;
 
-    //Setting user_rt_prio to priority given by user and
-    //sched policy to SCHED_FIFO
     temp = curr;
     do {
 	//Setting flag
 	temp->is_budget_set = 1;
-	//temp->rt_priority = rt_prio;
-	//rt_sched_parameters.sched_priority = rt_prio;
-	//retval = sched_setscheduler(temp,SCHED_FIFO,&rt_sched_parameters);
-	//printk("Retval = %d\n",retval);
-	//set_tsk_need_resched(temp);
     }while_each_thread(curr,temp);
 
     //Adding the task in our periodic linked list
     add_periodic_task(&(curr->periodic_task));
 
+    //Setting the rt proirities 
+    if (set_rt_priorities() < 0) {
+	printk("Error setting rt priorities\n");
+    }
     //Getting the sys clock frequency
     sysclock_freq = sysclock(max_frequency);
     printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
-    apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq);
+
+    if((ret = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
+	printk("Failed to set the cpu feq after sysclock calculations \n");
+    }
 
     //Loop through all the RT tasks and change the budget
 
@@ -143,6 +145,8 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
 
     //Unlocking spin lock
     write_unlock(&tasklist_lock);
+
+    cpufreq_driver_target(lastcpupolicy,ret,CPUFREQ_RELATION_L);
 
     return 0;
 }

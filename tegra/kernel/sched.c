@@ -459,6 +459,58 @@ void add_periodic_task(struct list_head * new){
 }
 EXPORT_SYMBOL_GPL(add_periodic_task);
 
+
+int set_rt_priorities( ){
+
+    struct list_head * temp;
+    struct task_struct * temp2;
+    struct task_struct * curr;
+    int rt_prio = 99, retval;
+    struct timespec prev_deadline;
+    struct sched_param rt_sched_parameters;
+    
+    //When there are no tasks in the system
+    //there is no one to set priority on
+    if(periodic_tasks_size <= 0){
+	return -1;
+    }
+
+    prev_deadline.tv_sec = 0;
+    prev_deadline.tv_nsec = 0;
+
+    list_for_each(temp, &periodic_task_head){
+	curr = container_of(temp, struct task_struct, periodic_task);
+
+	printk("Setting %d to rt_prio %d\n",curr->pid,rt_prio);
+	//Setting user_rt_prio to priority given by user and
+	//sched policy to SCHED_FIFO
+	temp2 = curr;
+	do {
+	    //Setting flag
+	    temp2->rt_priority = rt_prio;
+	    rt_sched_parameters.sched_priority = rt_prio;
+	    retval = sched_setscheduler(temp2,SCHED_FIFO,&rt_sched_parameters);
+	    printk("Retval = %d\n",retval);
+	    set_tsk_need_resched(temp2);
+	}while_each_thread(curr,temp2);
+
+	if (timespec_compare(&(curr->time_period),&(prev_deadline)) > 0) { 
+	    rt_prio--;
+	}
+
+	//Never let rt_prio go less than zero i.e MIN_RT_PRIO
+	if(rt_prio < 0) {
+	    rt_prio = 0;
+	}
+
+	prev_deadline.tv_sec = (curr->time_period).tv_sec;
+	prev_deadline.tv_nsec = (curr->time_period).tv_nsec;
+    }
+
+}
+EXPORT_SYMBOL_GPL(set_rt_priorities);
+
+
 //Removes a periodic task from the linked list
 void del_periodic_task(struct list_head * entry){
     printk("In deleting task\n");
@@ -583,7 +635,7 @@ unsigned long sysclock(unsigned long max_frequency) {
 	list[i].period = convert_to_usecs(curr->time_period);
 	i++;
     }
-    
+
     //Getting all the deadlines for the current tasks
     num_deadlines = make_deadline_array(list, periodic_tasks_size, &deadlines);
     remove_duplicates(deadlines, num_deadlines);
@@ -624,11 +676,32 @@ EXPORT_SYMBOL_GPL(sysclock);
 
 //It applies the sysclock frequency on the cpu as well as 
 //changes the budget for all the RT tasks.
-void apply_sysclock(unsigned long frequency, unsigned long max_frequency){
+int apply_sysclock(unsigned long frequency, unsigned long max_frequency){
     struct list_head * temp;
     struct task_struct * curr;
     uint64_t updated_budget;
     uint32_t max_freq = (uint32_t)max_frequency;
+    int i;
+    struct cpufreq_frequency_table * freq_table ;
+    struct cpufreq_policy* lastcpupolicy ;
+    int freq;
+
+    //Getting the next higher cpu freq that is avaialable on the processor
+    freq_table = cpufreq_frequency_get_table(0);
+
+    //Iterating over the frequency table 
+    for (i = 0; (freq_table[i].frequency != CPUFREQ_TABLE_END); i++) {
+	freq = freq_table[i].frequency;
+	if (freq == CPUFREQ_ENTRY_INVALID) {
+	    printk("CPU frequrncy obtained is invalid\n");
+	    continue;
+	}
+	if(frequency <= freq){
+	    printk("Freq selected is table entry %u is %u kHz \n",freq_table[i].index ,freq_table[i].frequency);
+	    frequency = freq ;
+	    break;
+	}
+    }
 
     list_for_each(temp, &periodic_task_head){
 	curr = container_of(temp, struct task_struct, periodic_task);
@@ -640,6 +713,11 @@ void apply_sysclock(unsigned long frequency, unsigned long max_frequency){
 	printk("Budget * Frequency / Max Freq is %llu ns @ %lu kHz\n", (unsigned long long)updated_budget, frequency);
 	curr->budget_time = ns_to_timespec(updated_budget);
     }
+
+    //setting the cpu freq to the value calculated by sysclock
+    //lastcpupolicy = cpufreq_cpu_get(0);
+    return frequency;
+    // return cpufreq_driver_target(lastcpupolicy,frequency,CPUFREQ_RELATION_L);
 }
 
     static
