@@ -390,10 +390,11 @@
 /* 378 */	CALL(sys_setProcessBudget)
 /* 379 */	CALL(sys_cancelBudget)
 /* 380 */	CALL(sys_waitUntilNextPeriod)
-/* 381 */	CALL(sys_get_process_count)
-/* 382 */	CALL(sys_get_current_processes)
-/* 383 */	CALL(sys_setLogging)
-/* 384 */	CALL(sys_getLog)
+/* 381 */	CALL(sys_setPMScheme)
+/* 382 */	CALL(sys_get_process_count)
+/* 383 */	CALL(sys_get_current_processes)
+/* 384 */	CALL(sys_setLogging)
+/* 385 */	CALL(sys_getLog)
 #ifndef syscalls_counted
 .equ syscalls_padding, ((NR_syscalls + 3) & ~3) - NR_syscalls
 #define syscalls_counted

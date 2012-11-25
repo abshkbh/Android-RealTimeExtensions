@@ -679,6 +679,12 @@ unsigned long sysclock(unsigned long max_frequency) {
 }
 EXPORT_SYMBOL_GPL(sysclock);
 
+//Kernel global to be used to determine
+//what power management scheme is wanted by the user
+//0 -> no PM 1-> SysClock 2-> PM Clock
+int power_scheme = 0;
+EXPORT_SYMBOL_GPL(power_scheme);
+
 //It applies the sysclock frequency on the cpu as well as 
 //changes the budget for all the RT tasks.
 unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency){
