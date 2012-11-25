@@ -14,7 +14,7 @@ int check_admission(struct timespec budget, struct timespec period);
 void add_periodic_task(struct list_head * new);
 void del_periodic_task(struct list_head * entry);
 long sysclock(unsigned long max_frequency);
-int apply_sysclock(unsigned long frequency, unsigned long max_frequency);
+unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency);
 int set_rt_priorities(void);
 
 asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct timespec period) {
@@ -25,10 +25,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     struct cpufreq_policy * lastcpupolicy = cpufreq_cpu_get(0);
     unsigned long max_frequency = (lastcpupolicy->cpuinfo).max_freq / 1000 ; //Getting MAX frequency in MHz
     unsigned long sysclock_freq;
-    ktime_t p;
     struct timespec task_budget;
-    struct sched_param rt_sched_parameters;
-    unsigned int ret;
+    unsigned int ret_freq, temp_freq;
+    int ret_val;
 
     //Error checks for input arguments
     if (!((period.tv_sec > 0) || (period.tv_nsec > 0))) {
@@ -74,6 +73,8 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     if(curr->is_budget_set == 1){
 	del_periodic_task(&(curr->periodic_task));
     }
+
+    printk("DEBUG: Default policy is %d\n",curr->policy);
 
     //First check if a period timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.
@@ -125,28 +126,35 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     if (set_rt_priorities() < 0) {
 	printk("Error setting rt priorities\n");
     }
+
+    printk("DEBUG: Updated policy is %d\n",curr->policy);
+
     //Getting the sys clock frequency
     sysclock_freq = sysclock(max_frequency);
     printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
 
-    if((ret = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
+    if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
 	printk("Failed to set the cpu feq after sysclock calculations \n");
     }
 
-    //Loop through all the RT tasks and change the budget
-
     //Start Timer
-    p = timespec_to_ktime(period);
+    /*p = timespec_to_ktime(period);
     if(hrtimer_start(&(curr->period_timer), p, HRTIMER_MODE_REL) == 1) {	
 	printk("Could not restart budget timer for task %d", pid);
-    }
+    }*/
 
     printk("User RT Prio for task %d is %d\n",pid,curr->rt_priority);
 
     //Unlocking spin lock
     write_unlock(&tasklist_lock);
+    
+    temp_freq = cpufreq_get(0);
+    printk("Current cpu freq before setting %d \n",temp_freq);
+    if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){
+	printk("Error :Processor frequency wasn't set\n"); 
+    }
+    temp_freq = cpufreq_get(0);
 
-    cpufreq_driver_target(lastcpupolicy,ret,CPUFREQ_RELATION_L);
-
+    printk("Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min);
     return 0;
 }

@@ -51,6 +51,7 @@
 #include <trace/events/sched.h>
 #include <linux/hw_breakpoint.h>
 #include <linux/oom.h>
+#include <linux/cpufreq.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -58,6 +59,10 @@
 #include <asm/mmu_context.h>
 
 void del_periodic_task(struct list_head * entry);
+long sysclock(unsigned long max_frequency);
+unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency);
+int set_rt_priorities(void);
+
 
 static void exit_mm(struct task_struct * tsk);
 
@@ -896,6 +901,12 @@ NORET_TYPE void do_exit(long code)
 {
     struct task_struct *tsk = current;
     struct task_struct *temp = current;
+    struct cpufreq_policy * lastcpupolicy = cpufreq_cpu_get(0);
+    unsigned int max_frequency = (lastcpupolicy->cpuinfo).max_freq / 1000 ; //Getting MAX frequency in MHz
+    unsigned int ret_freq, temp_freq;
+    unsigned long sysclock_freq;
+    int ret_val;
+
     int group_dead;
 
     if(tsk->is_budget_set == 1) {
@@ -920,10 +931,30 @@ NORET_TYPE void do_exit(long code)
 
 	    del_periodic_task(&(tsk->periodic_task));
 
+	    //Setting the rt proirities 
+	    if (set_rt_priorities() < 0) {
+		printk("Error setting rt priorities\n");
+	    }
+
+	    //Getting the sys clock frequency
+	    sysclock_freq = sysclock(max_frequency);
+	    printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
+
+	    if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
+		printk("Failed to set the cpu feq after sysclock calculations \n");
+	    }
+
 	}
 
-
 	write_unlock(&tasklist_lock);
+	temp_freq = cpufreq_get(0);
+	printk("Current cpu freq before setting %d \n",temp_freq);
+	if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){
+	    printk("Error :Processor frequency wasn't set\n"); 
+	}
+	temp_freq = cpufreq_get(0);
+
+	printk("Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min);
 
     }
 

@@ -250,7 +250,7 @@ enum hrtimer_restart period_timer_callback(struct hrtimer * timer) {
 
     spin_unlock_irqrestore(&(curr->task_spin_lock),flags);
 
-    printk("Time Period cback\n");
+    printk("Time Period cback %d\n", curr->pid);
     return HRTIMER_RESTART;
 } 
 EXPORT_SYMBOL_GPL(period_timer_callback);
@@ -460,15 +460,15 @@ void add_periodic_task(struct list_head * new){
 EXPORT_SYMBOL_GPL(add_periodic_task);
 
 
-int set_rt_priorities( ){
+int set_rt_priorities(void ){
 
     struct list_head * temp;
     struct task_struct * temp2;
     struct task_struct * curr;
-    int rt_prio = 100, retval;
+    int rt_prio = 0, retval;
     struct timespec prev_deadline;
     struct sched_param rt_sched_parameters;
-    
+
     //When there are no tasks in the system
     //there is no one to set priority on
     if(periodic_tasks_size <= 0){
@@ -480,9 +480,9 @@ int set_rt_priorities( ){
 
     list_for_each(temp, &periodic_task_head){
 	curr = container_of(temp, struct task_struct, periodic_task);
-	
+
 	if (timespec_compare(&(curr->time_period),&(prev_deadline)) > 0) { 
-	    rt_prio--;
+	    rt_prio++;
 	}
 	printk("Setting %d to rt_prio %d\n",curr->pid,rt_prio);
 	//Setting user_rt_prio to priority given by user and
@@ -499,14 +499,14 @@ int set_rt_priorities( ){
 
 
 	//Never let rt_prio go less than zero i.e MIN_RT_PRIO
-	if(rt_prio < 0) {
-	    rt_prio = 0;
+	if(rt_prio > 99) {
+	    rt_prio = 99;
 	}
 
 	prev_deadline.tv_sec = (curr->time_period).tv_sec;
 	prev_deadline.tv_nsec = (curr->time_period).tv_nsec;
     }
-
+    return 0;
 }
 EXPORT_SYMBOL_GPL(set_rt_priorities);
 
@@ -676,15 +676,15 @@ EXPORT_SYMBOL_GPL(sysclock);
 
 //It applies the sysclock frequency on the cpu as well as 
 //changes the budget for all the RT tasks.
-int apply_sysclock(unsigned long frequency, unsigned long max_frequency){
+unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency){
     struct list_head * temp;
     struct task_struct * curr;
     uint64_t updated_budget;
     uint32_t max_freq = (uint32_t)max_frequency;
     int i;
     struct cpufreq_frequency_table * freq_table ;
-    struct cpufreq_policy* lastcpupolicy ;
     int freq;
+    ktime_t p;
 
     //Getting the next higher cpu freq that is avaialable on the processor
     freq_table = cpufreq_frequency_get_table(0);
@@ -711,13 +711,33 @@ int apply_sysclock(unsigned long frequency, unsigned long max_frequency){
 	printk("Budget * Frequency is %llu ns\n", (unsigned long long)updated_budget);
 	__div64_32(&updated_budget, frequency);
 	printk("Budget * Frequency / Max Freq is %llu ns @ %lu kHz\n", (unsigned long long)updated_budget, frequency);
+
+	//Cancelling the budget timer of all tasks that were running 
+	if(hrtimer_try_to_cancel(&(curr->budget_timer)) == -1){ 
+	    printk("Budget timer for %u in apply_sysclock()\n", curr->pid);
+	}
+
+	//Cancelling the period timer for all tasks
+	if(hrtimer_try_to_cancel(&(curr->period_timer)) == -1){ 
+	    printk("Period timer for %u in apply_sysclock()\n", curr->pid);
+	}
+
+	//setting the compute times to zero
+	curr->compute_time.tv_sec = 0;
+	curr->compute_time.tv_nsec = 0;
+
 	curr->budget_time = ns_to_timespec(updated_budget);
     }
+    //Restarting the period timers for all the rt tasks
+    list_for_each(temp, &periodic_task_head){
+	curr = container_of(temp, struct task_struct, periodic_task);
 
-    //setting the cpu freq to the value calculated by sysclock
-    //lastcpupolicy = cpufreq_cpu_get(0);
+	p = timespec_to_ktime(curr->time_period);
+	if(hrtimer_start(&(curr->period_timer), p, HRTIMER_MODE_REL) == 1) {	
+	    printk("Could not restart period timer for task %d\n", curr->pid);
+	}
+    }
     return frequency;
-    // return cpufreq_driver_target(lastcpupolicy,frequency,CPUFREQ_RELATION_L);
 }
 
     static
@@ -5815,10 +5835,12 @@ recheck:
      */
     if (param->sched_priority < 0 ||
 	    (p->mm && param->sched_priority > MAX_USER_RT_PRIO-1) ||
-	    (!p->mm && param->sched_priority > MAX_RT_PRIO-1))
+	    (!p->mm && param->sched_priority > MAX_RT_PRIO-1)){
 	return -EINVAL;
-    if (rt_policy(policy) != (param->sched_priority != 0))
+	}
+    if (rt_policy(policy) != (param->sched_priority != 0)){
 	return -EINVAL;
+	}
 
     /*
      * Allow unprivileged RT tasks to decrease priority:
@@ -5858,6 +5880,7 @@ recheck:
 
     if (user) {
 	retval = security_task_setscheduler(p);
+	printk("ERR: security task setscheduler is %d\n", retval);
 	if (retval)
 	    return retval;
     }
