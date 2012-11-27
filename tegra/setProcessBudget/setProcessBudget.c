@@ -131,17 +131,12 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
 
     //Getting the sys clock frequency
     sysclock_freq = sysclock(max_frequency);
-    printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
+    printk("Sysclock frequency is %lu KHz\n", sysclock_freq);
 
     if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
 	printk("Failed to set the cpu feq after sysclock calculations \n");
-    }
+    } 
 
-    //Start Timer
-    /*p = timespec_to_ktime(period);
-    if(hrtimer_start(&(curr->period_timer), p, HRTIMER_MODE_REL) == 1) {	
-	printk("Could not restart budget timer for task %d", pid);
-    }*/
 
     printk("User RT Prio for task %d is %d\n",pid,curr->rt_priority);
 
@@ -155,6 +150,6 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     }
     temp_freq = cpufreq_get(0);
 
-    printk("Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min);
+    printk("Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min); 
     return 0;
 }

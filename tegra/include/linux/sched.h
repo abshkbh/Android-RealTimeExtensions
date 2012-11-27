@@ -1622,8 +1622,9 @@ struct task_struct {
 };
 
 struct task_ct_struct{
-    long budget;
-    long period;
+    unsigned long budget;
+    unsigned long period;
+    unsigned long sysclock_factor;
 };
 
 

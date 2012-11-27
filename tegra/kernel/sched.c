@@ -521,84 +521,6 @@ void del_periodic_task(struct list_head * entry){
 }
 EXPORT_SYMBOL_GPL(del_periodic_task);
 
-void remove_duplicates(long * deadlines, int size){
-    int i ;
-    long curr = deadlines[0];
-    for (i = 1 ; i < size ; i++){
-	if(curr == deadlines[i]){
-	    deadlines[i] = -1;
-	}else{
-	    curr = deadlines[i];
-	}
-    }
-}
-
-void sort_deadlines(long * deadlines, int size){
-    int i,j, flag = 1;
-    long temp;
-    for ( i = 1; i <= size && flag; i++) {
-	flag = 0;
-	for (j = 0; j < size - i; j++) {
-	    if(deadlines[j+1] < deadlines[j]) {
-		//SWAP j and j+1
-		temp = deadlines[j];
-		deadlines[j] = deadlines[j+1];
-		deadlines[j+1] = temp;
-		flag = 1;
-	    }
-	}
-    } 
-}
-
-int make_deadline_array(struct task_ct_struct * list, int size, long ** deadlines) {
-
-    int i;
-    int count = 0;
-    int pos = 0;
-    int factor = 1;
-    long current_period = 0;
-    long last_period = list[size - 1].period;
-
-    for(i = 0 ; i < (size - 1) ; i++) {
-	factor = 1;
-	current_period  = factor * list[i].period;
-
-	while (current_period < last_period) {
-	    count++;
-	    factor++;
-	    current_period = factor * list[i].period;
-	}
-
-	printk("i = %d and count = %d\n",i,count);
-    }
-
-    //Adding one for last deadline as well
-    count = count + 1;
-
-    //Callocing a deadline array
-    *deadlines = (long *)kmalloc(count*sizeof(long), GFP_KERNEL);
-    memset(*deadlines, '0', count*sizeof(long));
-
-    pos = 0;
-    for(i = 0 ; i < (size - 1) ; i++) {
-	factor = 1;
-	current_period  = factor * list[i].period;
-	while (current_period < last_period) {
-	    (*deadlines)[pos] = current_period;
-	    pos++;
-	    factor++;
-	    current_period = factor * list[i].period;
-	}
-
-    }
-    (*deadlines)[pos] = list[size - 1].period;
-
-    sort_deadlines(*deadlines , pos + 1);
-
-    return (pos + 1);
-
-}
-
 unsigned long get_max(uint64_t * list, int size){
     int i ;
     uint64_t max = list[0] ;
@@ -611,24 +533,34 @@ unsigned long get_max(uint64_t * list, int size){
     return max;
 }
 
+
+
 //Function for the actual sysclock algorithm
 //It has to be called when the task list is locked
 unsigned long sysclock(unsigned long max_frequency) {
 
-    int i = 0;
-    int j = 0, k = 0;
-    uint64_t min_freq[periodic_tasks_size]; //I feel so dirty doing this
-    uint64_t omega = 0;
-    uint64_t min = 1000000; 
-    long * deadlines;
-    int num_deadlines;
     struct task_struct * curr;
     struct list_head * temp;
     struct task_ct_struct list[periodic_tasks_size];
-    unsigned long frequency;
+
+    int in_bzp = 1 ; //computing busy period
+    unsigned long C; //time trace
+    unsigned long Ctemp = 0; //time trace
+    unsigned long slack = 0; //slack time
+    unsigned long w  = 0; //workload
+    unsigned long tW = 0; //beginning next busy period
+    unsigned long alpha = 2 * SCALE_UP_FACTOR ; //energy minimizing clock frequency normalized to fmax
+    unsigned long delta = 0;
+    unsigned long T = 0;
+    int i = 0;
+    int j = 0;
+    unsigned long temp_slack  = 0;
+    unsigned long idle_duration = 0;
+    unsigned long temp_idle_duration = 0;
+    int iteration = 0;
+    unsigned long max_alpha = 0;
 
     //Getting all the tasks
-
     list_for_each(temp, &periodic_task_head){
 	curr = container_of(temp, struct task_struct, periodic_task);
 	list[i].budget = convert_to_usecs(curr->min_budget_time);
@@ -636,41 +568,76 @@ unsigned long sysclock(unsigned long max_frequency) {
 	i++;
     }
 
-    //Getting all the deadlines for the current tasks
-    num_deadlines = make_deadline_array(list, periodic_tasks_size, &deadlines);
-    remove_duplicates(deadlines, num_deadlines);
-
-    //Iterating over each task
     for(i = 0 ; i < periodic_tasks_size ; i++) {
 
-	min = 1000000;
-	//iterate over each deadline
-	for(j = 0 ; j < num_deadlines ; j++) {
+	//Initializing variables for compute alpha
+	C = list[i].budget;
+	T = list[i].period;
+	Ctemp = 0; //time trace
+	slack = 0; //slack time
+	w  = 0; //workload
+	tW = 0; //beginning next busy period
+	alpha = 2 * SCALE_UP_FACTOR ; //energy minimizing clock frequency normalized to fmax
+	delta = 0;
+	temp_slack  = 0;
+	idle_duration = 0;
+	temp_idle_duration = 0;
+	iteration = 0;
+	//Initializion ends
 
-	    if ((deadlines[j] != -1) && (deadlines[j] <= list[i].period)){
+	//Compute Alpha begins
+	while (C < T) {
 
-		omega = 0;
-		for(k = 0 ; k <= i ; k++){
-		    omega += ceiling(deadlines[j] , list[k].period) * list[k].budget;
-		}	
-		printk("%dth task at deadline %ld Omega before scaling is %llu\n",i , deadlines[j],(unsigned long long)omega);
-		omega = (omega * 1000000); 
-		__div64_32(&omega ,deadlines[j]);
+	    if(in_bzp) {
+		delta = T - C;
+		while((C < T) && (delta > 0)) {
+		    temp_slack = 0;
+		    for(j = 0 ; j <=i ; j++){
+			temp_slack += ((C / list[j].period) + 1)*(list[j].budget);
+		    }
+		    Ctemp = slack + temp_slack;
+		    delta = Ctemp - C;
+		    C = Ctemp;
+		}
+		in_bzp = 0;
+		printk("Iteration = %d C = %ld slack = %ld\n",iteration,C,slack);
+		iteration++;
+	    }
+	    else {
 
-		printk("%dth task at deadline %ld Omega is %llu\n",i , deadlines[j],(unsigned long long)omega);
-		if(omega < min ){
-		    min = omega;
+		idle_duration = 234567; //dummy high value 
+		for(j = 0 ; j <=i ; j++){
+		    temp_idle_duration = (ceiling(C,list[j].period) * list[j].period) - C;
+		    if (temp_idle_duration < idle_duration) {
+			idle_duration = temp_idle_duration;
+		    }
 		}
 
+		if ((T - C) < idle_duration){
+		    idle_duration = T - C;
+		}
+
+		C += idle_duration;
+		slack += idle_duration;
+		tW = C;
+		w = tW - slack;
+		alpha = ( alpha < ((w * SCALE_UP_FACTOR) / tW)) ? alpha : ((w * SCALE_UP_FACTOR) / tW);
+		printk("Iteration = %d C = %ld slack = %ld\n",iteration,C,slack);
+		iteration++;
+		in_bzp = 1;
 	    }
 
 	}
-	min_freq[i] = min;
-	printk("Min freq at %d is %llu \n",i,(unsigned long long)min);  
+	list[i].sysclock_factor = alpha;
+
+	printk("Fot task %d alpha = %ld\n",i,alpha);
+	if (alpha > max_alpha) {
+	    max_alpha = alpha;
+	}
     }
-    kfree(deadlines);
-    frequency = get_max(min_freq, periodic_tasks_size);
-    return (frequency * max_frequency)/1000 ;
+
+    printk("Max alpha = %ld\n",max_alpha);
+    return (max_frequency * max_alpha);  //Return in kHz
 }
 EXPORT_SYMBOL_GPL(sysclock);
 
@@ -5837,10 +5804,10 @@ recheck:
 	    (p->mm && param->sched_priority > MAX_USER_RT_PRIO-1) ||
 	    (!p->mm && param->sched_priority > MAX_RT_PRIO-1)){
 	return -EINVAL;
-	}
+    }
     if (rt_policy(policy) != (param->sched_priority != 0)){
 	return -EINVAL;
-	}
+    }
 
     /*
      * Allow unprivileged RT tasks to decrease priority:
