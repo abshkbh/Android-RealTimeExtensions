@@ -59,9 +59,10 @@
 #include <asm/mmu_context.h>
 
 void del_periodic_task(struct list_head * entry);
-long sysclock(unsigned long max_frequency);
+long sysclock(unsigned long max_frequency, struct task_ct_struct * list);
 unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency);
 int set_rt_priorities(void);
+void make_task_ct_struct(struct task_ct_struct ** list);
 
 
 static void exit_mm(struct task_struct * tsk);
@@ -906,6 +907,7 @@ NORET_TYPE void do_exit(long code)
     unsigned int ret_freq, temp_freq;
     unsigned long sysclock_freq;
     int ret_val;
+    struct task_ct_struct * list;
 
     int group_dead;
 
@@ -937,12 +939,14 @@ NORET_TYPE void do_exit(long code)
 	    }
 
 	    //Getting the sys clock frequency
-	    sysclock_freq = sysclock(max_frequency);
+	    make_task_ct_struct(&list);
+	    sysclock_freq = sysclock(max_frequency, list);
 	    printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
 
 	    if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
 		printk("Failed to set the cpu feq after sysclock calculations \n");
 	    }
+	    kfree(list);
 
 	}
 

@@ -344,14 +344,8 @@ int rt_test (struct task_ct_struct list[], int pos){
 int __check_admission(struct task_ct_struct list[], int size){
 
     int i;
-    //long util = 0;
     for(i = 0 ; i < size ; i++){
 
-	//util += (list[i].budget * SCALE_UP_FACTOR) / list[i].period;
-
-	//printk("util for %d is %ld \n",i,util);	
-
-	//if(util > GET_UTIL_BOUND(i))
 	if(rt_test(list ,i) == 0){
 	    printk("RT test failed\n");
 	    return 0;
@@ -384,7 +378,7 @@ int check_admission(struct timespec budget, struct timespec period){
     //Checking admission of the first task
     if(periodic_tasks_size == 0){
 	util = (budget_us * SCALE_UP_FACTOR)/period_us;
-	if(util > util_bound[periodic_tasks_size]){
+	if(util > 1000){
 	    return 0;
 	} else{
 	    return 1;
@@ -459,7 +453,6 @@ void add_periodic_task(struct list_head * new){
 }
 EXPORT_SYMBOL_GPL(add_periodic_task);
 
-
 int set_rt_priorities(void ){
 
     struct list_head * temp;
@@ -510,7 +503,6 @@ int set_rt_priorities(void ){
 }
 EXPORT_SYMBOL_GPL(set_rt_priorities);
 
-
 //Removes a periodic task from the linked list
 void del_periodic_task(struct list_head * entry){
     printk("In deleting task\n");
@@ -521,27 +513,175 @@ void del_periodic_task(struct list_head * entry){
 }
 EXPORT_SYMBOL_GPL(del_periodic_task);
 
-unsigned long get_max(uint64_t * list, int size){
-    int i ;
-    uint64_t max = list[0] ;
-
-    for(i=1 ; i < size ; i++){
-	if(list[i] > max ){
-	    max = list[i];
+unsigned long get_max(unsigned long pm_freq[], int size, int pos){
+    int i;
+    unsigned long max = pm_freq[pos];
+    for(i = pos+1; i < size; i++){
+	if(pm_freq[i] > max){
+	    max = pm_freq[i];
 	}
     }
     return max;
 }
 
+/*
+ * delta --> triangle
+ * del --> wierd symbol
+ * curr_freq --> Vi
+ **/
+unsigned long inflated_freq(struct task_ct_struct curr, int pos, unsigned long pm_freq[], struct task_ct_struct * list){
+    char in_bzp = 1;
+    unsigned long long w = curr.budget;
+    unsigned long long w_dash = 0;
+    unsigned long long delta = 0;
+    unsigned long long del = 0;
+    unsigned long long I = 0;
+    unsigned long long S = 0;
+    unsigned long long t;
+    unsigned long alpha = 1000;
+    unsigned long long ib = 0;
+    unsigned long long b = 0;
+    //Use in the algo where required
+    unsigned long long temp_min;
+    unsigned long long temp;
 
+    int j;
+
+    //w < D loop
+    while(w < curr.period){
+	if(in_bzp == 1){
+	    printk("In IF\n");
+	    delta = curr.period - w;
+	    printk("Delta is %llu\n", delta);
+	    while(w < curr.period && delta > 0){
+		printk("In while(w < curr.period && delta > 0)\n");
+		ib = 0;
+		b = 0;
+		for(j = 0; j < periodic_tasks_size; j++){
+		    if(list[j].period <= curr.period && pm_freq[j] != 0){
+			temp =((unsigned long long)list[j].budget) * SCALE_UP_FACTOR;
+			__div64_32(&temp, pm_freq[j]);
+			ib += temp * (((long)w / (long)list[j].period)+1);
+		    } else if(list[j].period <= curr.period &&  pm_freq[j] == 0){
+			b += ((unsigned long long)list[j].budget) * (((long)w / (long)list[j].period) + 1);
+		    }
+		}//For End
+
+		printk("IB is %llu\n", ib);
+		printk("B is %llu\n", b);
+
+		w_dash = ib + b + S;
+		delta = w_dash - w;
+		w = w_dash;
+
+		printk("w_dash is %llu\n", w_dash);
+		printk("delta is %llu\n", delta);
+		printk("w is %llu\n", w);
+
+	    }//While End
+	    in_bzp = 0;
+	} else{
+	    printk("In else\n");
+	    I = (unsigned long long)curr.period - w;
+	    for(j = 0; j <= pos; j++){
+		temp_min = list[j].period * ceiling(w, list[j].period) - w;
+		if(temp_min < I){
+		    I = temp_min;
+		}
+	    }//For End
+	    
+	    printk("I is %llu\n", I);
+
+	    S += I;
+	    w += I;
+	    t = w;
+	    del = t - ib;
+	    
+	    printk("S is %llu\n", S);
+	    printk("w is %llu\n", w);
+	    printk("t is %llu\n", t);
+	    printk("del is %llu\n", del);
+
+	    temp = b * SCALE_UP_FACTOR;
+	    //removed scaling
+	    __div64_32( &temp , del); 
+	    if(temp < alpha){
+		temp = b * SCALE_UP_FACTOR;
+		__div64_32( &temp , del);
+		alpha = temp;
+		printk("Changed Alpha is %lu\n", alpha);
+	    }
+
+	    in_bzp = 1;
+	}//ELSE end
+    } // Main while end
+
+    //Returning the minimum frequency
+    printk("Returning alpha is %lu\n", alpha);
+    return alpha;  
+}
+
+/*
+ * pm_freq --> v
+ * min_freq --> e
+ **/
+void pmclock(struct task_ct_struct * list){
+    unsigned long min_freq[periodic_tasks_size];
+    unsigned long pm_freq[periodic_tasks_size];
+    int i, j;
+
+    //Iterating iver the list to create vector with min frequencies
+    for( i = 0;i<periodic_tasks_size ; i++){
+	min_freq[i] = list[i].sysclock_factor;
+    }
+    //Initializing all the pm frequencies to 0
+    for(i = 0; i < periodic_tasks_size; i++){
+	pm_freq[i] = 0;
+    }
+
+    for(i = 0; i < periodic_tasks_size; i++){
+	//Get pm_freq[i] from the frequency_scaling_table
+	pm_freq[i] = get_max(min_freq, periodic_tasks_size, i);
+
+	if((i != 0) && (pm_freq[i-1] > pm_freq[i])){
+	    pm_freq[i] = 0;
+	    for(j = i; j < periodic_tasks_size; j++){
+		min_freq[j] = inflated_freq(list[j], j, pm_freq, list);
+	    }
+	}
+	//Get pm_freq[i] from the frequency_scaling_table
+	pm_freq[i] = get_max(min_freq, periodic_tasks_size, i);
+    }
+
+    for(i = 0; i < periodic_tasks_size; i++){
+	printk("Min Freq at %d is %ld\n", i, pm_freq[i]);
+    }
+}
+EXPORT_SYMBOL_GPL(pmclock);
+
+void make_task_ct_struct(struct task_ct_struct ** list){
+    
+    struct list_head * temp;
+    struct task_struct * curr;
+    int i = 0;
+
+    *list = (struct task_ct_struct *) kmalloc(periodic_tasks_size * sizeof(struct task_ct_struct), GFP_KERNEL);
+
+    list_for_each(temp, &periodic_task_head){
+	curr = container_of(temp, struct task_struct, periodic_task);
+	(*list)[i].budget = convert_to_usecs(curr->min_budget_time);
+	(*list)[i].period = convert_to_usecs(curr->time_period);
+	i++;
+    }
+}
 
 //Function for the actual sysclock algorithm
 //It has to be called when the task list is locked
-unsigned long sysclock(unsigned long max_frequency) {
+unsigned long sysclock(unsigned long max_frequency, struct task_ct_struct * list) {
 
-    struct task_struct * curr;
-    struct list_head * temp;
-    struct task_ct_struct list[periodic_tasks_size];
+    //struct task_struct * curr;
+    //struct list_head * temp;
+    //struct task_ct_struct list[periodic_tasks_size];
 
     int in_bzp = 1 ; //computing busy period
     unsigned long C; //time trace
@@ -564,13 +704,6 @@ unsigned long sysclock(unsigned long max_frequency) {
     //When there are no RT tasks the system should run at the min frequency
     if(periodic_tasks_size <= 0){
 	return 0;
-    }
-
-    list_for_each(temp, &periodic_task_head){
-	curr = container_of(temp, struct task_struct, periodic_task);
-	list[i].budget = convert_to_usecs(curr->min_budget_time);
-	list[i].period = convert_to_usecs(curr->time_period);
-	i++;
     }
 
     for(i = 0 ; i < periodic_tasks_size ; i++) {
@@ -635,7 +768,7 @@ unsigned long sysclock(unsigned long max_frequency) {
 	}
 	list[i].sysclock_factor = alpha;
 
-	printk("Fot task %d alpha = %ld\n",i,alpha);
+	printk("For task %d alpha = %ld\n", i, alpha);
 	if (alpha > max_alpha) {
 	    max_alpha = alpha;
 	}
@@ -707,7 +840,7 @@ unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency
 
 	curr->budget_time = ns_to_timespec(updated_budget);
 
-        //We should also wake-up all threads in a process
+	//We should also wake-up all threads in a process
 	//in case they were sleeping. This is consistent with 
 	//our design of apply sysclock emulating the critical 
 	//instant

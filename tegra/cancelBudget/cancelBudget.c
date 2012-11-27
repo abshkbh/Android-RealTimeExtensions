@@ -8,9 +8,10 @@
 #include <linux/cpufreq.h>
 
 void del_periodic_task(struct list_head * entry);
-long sysclock(unsigned long max_frequency);
+long sysclock(unsigned long max_frequency, struct task_ct_struct * list);
 unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency);
 int set_rt_priorities(void);
+void make_task_ct_struct(struct task_ct_struct ** list);
 
 asmlinkage int sys_cancelBudget(pid_t pid) {
 
@@ -22,6 +23,7 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
     unsigned long sysclock_freq;
     int ret_val;
     struct sched_param rt_sched_parameters;
+    struct task_ct_struct * list;
 
     //Error checks for input arguments
     if (pid <= 0) {
@@ -94,7 +96,8 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
 	printk("Error setting rt priorities\n");
     }
     //Getting the sys clock frequency
-    sysclock_freq = sysclock(max_frequency);
+    make_task_ct_struct(&list);
+    sysclock_freq = sysclock(max_frequency, list);
     printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
 
     if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
@@ -110,6 +113,7 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
     }
     temp_freq = cpufreq_get(0);
     printk("Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min);
+    kfree(list);
 
     return 0;
 }
