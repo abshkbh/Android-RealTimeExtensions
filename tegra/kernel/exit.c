@@ -947,14 +947,16 @@ NORET_TYPE void do_exit(long code)
 	}
 
 	write_unlock(&tasklist_lock);
-	temp_freq = cpufreq_get(0);
-	printk("Current cpu freq before setting %d \n",temp_freq);
-	if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){
-	    printk("Error :Processor frequency wasn't set\n"); 
-	}
-	temp_freq = cpufreq_get(0);
+	if (tsk->pid == tsk->tgid) {
+	    temp_freq = cpufreq_get(0);
+	    printk("Current cpu freq before setting %d \n",temp_freq);
+	    if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){
+		printk("Error :Processor frequency wasn't set\n"); 
+	    }
+	    temp_freq = cpufreq_get(0);
 
-	printk("Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min);
+	    printk("Cpu freq after setting %d min freq is %d and user_policy.min is %u\n",temp_freq,lastcpupolicy->min, lastcpupolicy->user_policy.min);
+	}
 
     }
 

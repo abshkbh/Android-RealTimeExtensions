@@ -46,7 +46,7 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
 	rt_sched_parameters.sched_priority = 0;
 	curr->policy = SCHED_NORMAL ;	
 	printk(" DEBUG : Policy before cancel budget is %d\n" , temp->policy);
-	ret_val = sched_setscheduler(temp, SCHED_NORMAL, &rt_sched_parameters);
+	ret_val = sched_setscheduler_nocheck(temp, SCHED_NORMAL, &rt_sched_parameters);
 	
 	printk(" DEBUG : Policy after cancel budget is %d\n" , temp->policy);
 	printk("Retval = %d\n",ret_val);

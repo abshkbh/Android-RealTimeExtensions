@@ -133,6 +133,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     sysclock_freq = sysclock(max_frequency);
     printk("Sysclock frequency is %lu KHz\n", sysclock_freq);
 
+    //TODO : What if task was sleeping when this function is called. Technically you should
+    //wake it up in apply_sysclock and emulate critical instant. Otherwise it will be woken up after
+    //one period.
     if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
 	printk("Failed to set the cpu feq after sysclock calculations \n");
     } 

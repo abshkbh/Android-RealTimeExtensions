@@ -492,7 +492,7 @@ int set_rt_priorities(void ){
 	    //Setting flag
 	    temp2->rt_priority = rt_prio;
 	    rt_sched_parameters.sched_priority = rt_prio;
-	    retval = sched_setscheduler(temp2,SCHED_FIFO,&rt_sched_parameters);
+	    retval = sched_setscheduler_nocheck(temp2,SCHED_FIFO,&rt_sched_parameters);
 	    printk("Retval = %d\n",retval);
 	    set_tsk_need_resched(temp2);
 	}while_each_thread(curr,temp2);
@@ -561,6 +561,11 @@ unsigned long sysclock(unsigned long max_frequency) {
     unsigned long max_alpha = 0;
 
     //Getting all the tasks
+    //When there are no RT tasks the system should run at the min frequency
+    if(periodic_tasks_size <= 0){
+	return 0;
+    }
+
     list_for_each(temp, &periodic_task_head){
 	curr = container_of(temp, struct task_struct, periodic_task);
 	list[i].budget = convert_to_usecs(curr->min_budget_time);
@@ -641,10 +646,17 @@ unsigned long sysclock(unsigned long max_frequency) {
 }
 EXPORT_SYMBOL_GPL(sysclock);
 
+//Kernel global to be used to determine
+//what power management scheme is wanted by the user
+//0 -> no PM 1-> SysClock 2-> PM Clock
+int power_scheme = 0;
+EXPORT_SYMBOL_GPL(power_scheme);
+
 //It applies the sysclock frequency on the cpu as well as 
 //changes the budget for all the RT tasks.
 unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency){
     struct list_head * temp;
+    struct task_struct * temp2;
     struct task_struct * curr;
     uint64_t updated_budget;
     uint32_t max_freq = (uint32_t)max_frequency;
@@ -694,7 +706,21 @@ unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency
 	curr->compute_time.tv_nsec = 0;
 
 	curr->budget_time = ns_to_timespec(updated_budget);
+
+        //We should also wake-up all threads in a process
+	//in case they were sleeping. This is consistent with 
+	//our design of apply sysclock emulating the critical 
+	//instant
+	temp2 = curr;
+	do {
+	    if(wake_up_process(temp2)){
+		printk("Process was sleeping %d\n",temp2->pid);
+	    }
+	}while_each_thread(curr,temp2);
+
+
     }
+
     //Restarting the period timers for all the rt tasks
     list_for_each(temp, &periodic_task_head){
 	curr = container_of(temp, struct task_struct, periodic_task);
