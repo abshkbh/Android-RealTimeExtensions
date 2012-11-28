@@ -1619,12 +1619,18 @@ struct task_struct {
 	it is used by sysclock */
 	struct timespec min_budget_time ;
 
+	/*The frequency decided by PMclock for this task*/
+	unsigned long pmclock_freq;
+	
+	/*Min freq value returned by appllying sysclock to this task*/
+	unsigned long alpha;
+
 };
 
 struct task_ct_struct{
     unsigned long budget;
     unsigned long period;
-    unsigned long sysclock_factor;
+    struct task_struct * task;
 };
 
 

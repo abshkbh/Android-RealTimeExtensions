@@ -632,7 +632,7 @@ void pmclock(struct task_ct_struct * list){
 
     //Iterating iver the list to create vector with min frequencies
     for( i = 0;i<periodic_tasks_size ; i++){
-	min_freq[i] = list[i].sysclock_factor;
+	min_freq[i] = (list[i].task)->alpha;
     }
     //Initializing all the pm frequencies to 0
     for(i = 0; i < periodic_tasks_size; i++){
@@ -651,10 +651,13 @@ void pmclock(struct task_ct_struct * list){
 	}
 	//Get pm_freq[i] from the frequency_scaling_table
 	pm_freq[i] = get_max(min_freq, periodic_tasks_size, i);
+	
+	(list[i].task)->pmclock_freq = pm_freq[i];
     }
 
     for(i = 0; i < periodic_tasks_size; i++){
 	printk("Min Freq at %d is %ld\n", i, pm_freq[i]);
+	 
     }
 }
 EXPORT_SYMBOL_GPL(pmclock);
@@ -671,6 +674,7 @@ void make_task_ct_struct(struct task_ct_struct ** list){
 	curr = container_of(temp, struct task_struct, periodic_task);
 	(*list)[i].budget = convert_to_usecs(curr->min_budget_time);
 	(*list)[i].period = convert_to_usecs(curr->time_period);
+	(*list)[i].task = curr;
 	i++;
     }
 }
@@ -766,7 +770,8 @@ unsigned long sysclock(unsigned long max_frequency, struct task_ct_struct * list
 	    }
 
 	}
-	list[i].sysclock_factor = alpha;
+	//Setting the min sysclock frequency for this task 
+	(list[i].task)->alpha = alpha;
 
 	printk("For task %d alpha = %ld\n", i, alpha);
 	if (alpha > max_alpha) {
