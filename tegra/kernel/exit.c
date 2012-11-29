@@ -63,7 +63,9 @@ long sysclock(unsigned long max_frequency, struct task_ct_struct * list);
 unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency);
 int set_rt_priorities(void);
 void make_task_ct_struct(struct task_ct_struct ** list);
+void pmclock(struct task_ct_struct * list);
 
+extern int power_scheme;
 
 static void exit_mm(struct task_struct * tsk);
 
@@ -904,7 +906,7 @@ NORET_TYPE void do_exit(long code)
     struct task_struct *temp = current;
     struct cpufreq_policy * lastcpupolicy = cpufreq_cpu_get(0);
     unsigned int max_frequency = (lastcpupolicy->cpuinfo).max_freq / 1000 ; //Getting MAX frequency in MHz
-    unsigned int ret_freq, temp_freq;
+    unsigned int ret_freq = 0, temp_freq;
     unsigned long sysclock_freq;
     int ret_val;
     struct task_ct_struct * list;
@@ -939,14 +941,25 @@ NORET_TYPE void do_exit(long code)
 	    }
 
 	    //Getting the sys clock frequency
-	    make_task_ct_struct(&list);
-	    sysclock_freq = sysclock(max_frequency, list);
-	    printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
 
-	    if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
-		printk("Failed to set the cpu feq after sysclock calculations \n");
+	    //Changing the frequency in SYSCLOCK/PM Clock
+	    if(power_scheme == 1){
+		make_task_ct_struct(&list);
+		sysclock_freq = sysclock(max_frequency, list);
+		printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
+
+		if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
+		    printk("Failed to set the cpu feq after sysclock calculations \n");
+		}
+		kfree(list);
+	    } else if (power_scheme == 2){
+		make_task_ct_struct(&list);
+		sysclock_freq = sysclock(max_frequency, list);
+		printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
+		pmclock(list);
+		kfree(list);
+
 	    }
-	    kfree(list);
 
 	}
 

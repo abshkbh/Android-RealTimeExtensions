@@ -19,6 +19,8 @@ int set_rt_priorities(void);
 void make_task_ct_struct(struct task_ct_struct ** list);
 void pmclock(struct task_ct_struct * list);
 
+extern int power_scheme;
+
 asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct timespec period) {
 
     struct task_struct * curr;    
@@ -26,7 +28,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     unsigned long temp_time;
     struct cpufreq_policy * lastcpupolicy = cpufreq_cpu_get(0);
     unsigned long max_frequency = (lastcpupolicy->cpuinfo).max_freq / 1000 ; //Getting MAX frequency in MHz
-    unsigned long sysclock_freq;
+    unsigned long sysclock_freq = 0;
     struct timespec task_budget;
     unsigned int ret_freq, temp_freq;
     int ret_val;
@@ -47,7 +49,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     write_lock(&tasklist_lock);
 
     //First get budget from cycles in (millions) / current CPU frequency in (Mhz) * 1000 ns
-    temp_time = ((budget * SCALE) / (max_frequency)) * 1000;
+    temp_time = (budget / (max_frequency)) * 1000;
     task_budget = ns_to_timespec(temp_time);
 
     printk("Time in ns = %lu and frequency = %lu Mhz\n",temp_time,max_frequency);
@@ -132,34 +134,50 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
 
     printk("DEBUG: Updated policy is %d\n",curr->policy);
 
-    //Getting the sys clock frequency
-    make_task_ct_struct(&list);
-    sysclock_freq = sysclock(max_frequency, list);
-    printk("Sysclock frequency is %lu KHz\n", sysclock_freq);
-    pmclock(list);
-
-    //TODO : What if task was sleeping when this function is called. Technically you should
-    //wake it up in apply_sysclock and emulate critical instant. Otherwise it will be woken up after
-    //one period.
-    if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
-	printk("Failed to set the cpu feq after sysclock calculations \n");
-    } 
-
+    switch(power_scheme){
+	case 0:
+	    printk("SETPROCESSBUDGET: No PM Scheme selected\n");
+	    break;
+	case 1:
+	    printk("SETPROCESSBUDGET: SysClock is selected\n");
+	    //Getting the sys clock frequency
+	    make_task_ct_struct(&list);
+	    sysclock_freq = sysclock(max_frequency, list);
+	    printk("Sysclock frequency is %lu KHz\n", sysclock_freq);
+	    if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
+		printk("Failed to set the cpu feq after sysclock calculations \n");
+	    } 
+	    kfree(list);
+	    break;
+	case 2:
+	    //Getting the PM clock frequency
+	    printk("SETPROCESSBUDGET: PMClock is selected\n");
+	    make_task_ct_struct(&list);
+	    sysclock_freq = sysclock(max_frequency, list);
+	    printk("Sysclock frequency is %lu KHz\n", sysclock_freq);
+	    pmclock(list);
+	    kfree(list);
+	    break;
+    }
 
     printk("User RT Prio for task %d is %d\n",pid,curr->rt_priority);
 
     //Unlocking spin lock
     write_unlock(&tasklist_lock);
-    
-    temp_freq = cpufreq_get(0);
-    printk("Current cpu freq before setting %d \n",temp_freq);
-    if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){
-	printk("Error :Processor frequency wasn't set\n"); 
+
+    printk("leaving the task_list lock \n");
+
+    //Setting the frequency only for SYSCLOCK
+    if(power_scheme == 1){
+	temp_freq = cpufreq_get(0);
+	printk("Current cpu freq before setting %d \n",temp_freq);
+	if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){
+	    printk("Error :Processor frequency wasn't set\n"); 
+	}
+	temp_freq = cpufreq_get(0);
+	printk("Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min);
     }
-    temp_freq = cpufreq_get(0);
 
-    printk("Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min);
-
-    kfree(list);
+    printk("Returning from setProcessBudget \n");
     return 0;
 }

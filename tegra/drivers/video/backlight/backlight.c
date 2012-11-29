@@ -389,6 +389,45 @@ static int __init backlight_class_init(void)
 	return 0;
 }
 
+int __set_brightness(struct device * dev, void * data){
+
+    struct backlight_device *bd = to_backlight_device(dev);
+    unsigned long brightness;
+
+    brightness = *((unsigned long *)(data));
+
+    mutex_lock(&bd->ops_lock);
+    if (bd->ops) {
+	if (brightness > bd->props.max_brightness){
+	    return -EINVAL;
+	}
+	else {
+	    pr_debug("backlight: set brightness to %lu\n",
+		    brightness);
+	    bd->props.brightness = brightness;
+	    backlight_update_status(bd);
+	}
+    }
+    mutex_unlock(&bd->ops_lock);
+
+    backlight_generate_event(bd, BACKLIGHT_UPDATE_SYSFS);
+
+    return 0;
+}
+
+/*
+ * Sets the brightness
+ **/
+void set_brightness(int brightness){
+    //struct device *bd;
+    unsigned long br = brightness;
+    int retval;
+
+    retval = class_for_each_device(backlight_class, NULL, &br, __set_brightness);
+    printk("SET_BRIGHTNESS: Ret val is %d\n", retval);
+}
+EXPORT_SYMBOL_GPL(set_brightness);
+
 /*
  * if this is compiled into the kernel, we need to ensure that the
  * class is registered before users of the class try to register lcd's

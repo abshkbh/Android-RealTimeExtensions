@@ -523,7 +523,32 @@ unsigned long get_max(unsigned long pm_freq[], int size, int pos){
     }
     return max;
 }
+/*This funstion looks in the table of available frequencies of given cpu
+  and finds the first frequency higher than given freq */
+unsigned long get_table_frequency(int cpu_no , unsigned long frequency){
 
+    struct cpufreq_frequency_table * freq_table ;
+    int freq,i;
+
+    //Getting the next higher cpu freq that is avaialable on the processor
+    freq_table = cpufreq_frequency_get_table(cpu_no);
+
+    //Iterating over the frequency table 
+    for (i = 0; (freq_table[i].frequency != CPUFREQ_TABLE_END); i++) {
+	freq = freq_table[i].frequency;
+	if (freq == CPUFREQ_ENTRY_INVALID) {
+	    printk("CPU frequrncy obtained is invalid\n");
+	    continue;
+	}
+	if(frequency <= freq){
+	    printk("Freq selected is table entry %u is %u kHz \n",freq_table[i].index ,freq_table[i].frequency);
+	    frequency = freq ;
+	    break;
+	}
+    }
+    return frequency;
+
+}
 /*
  * delta --> triangle
  * del --> wierd symbol
@@ -589,14 +614,14 @@ unsigned long inflated_freq(struct task_ct_struct curr, int pos, unsigned long p
 		    I = temp_min;
 		}
 	    }//For End
-	    
+
 	    printk("I is %llu\n", I);
 
 	    S += I;
 	    w += I;
 	    t = w;
 	    del = t - ib;
-	    
+
 	    printk("S is %llu\n", S);
 	    printk("w is %llu\n", w);
 	    printk("t is %llu\n", t);
@@ -651,19 +676,21 @@ void pmclock(struct task_ct_struct * list){
 	}
 	//Get pm_freq[i] from the frequency_scaling_table
 	pm_freq[i] = get_max(min_freq, periodic_tasks_size, i);
-	
-	(list[i].task)->pmclock_freq = pm_freq[i];
+
+	//Getting the frequency from the table for cpu 0 and setting it into the task struct
+	//TODO get the core of the task after bin packing and then get the max
+	(list[i].task)->pmclock_freq = get_table_frequency(0 , pm_freq[i]);
     }
 
     for(i = 0; i < periodic_tasks_size; i++){
 	printk("Min Freq at %d is %ld\n", i, pm_freq[i]);
-	 
+
     }
 }
 EXPORT_SYMBOL_GPL(pmclock);
 
 void make_task_ct_struct(struct task_ct_struct ** list){
-    
+
     struct list_head * temp;
     struct task_struct * curr;
     int i = 0;
@@ -798,27 +825,10 @@ unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency
     struct task_struct * curr;
     uint64_t updated_budget;
     uint32_t max_freq = (uint32_t)max_frequency;
-    int i;
-    struct cpufreq_frequency_table * freq_table ;
-    int freq;
     ktime_t p;
 
-    //Getting the next higher cpu freq that is avaialable on the processor
-    freq_table = cpufreq_frequency_get_table(0);
-
-    //Iterating over the frequency table 
-    for (i = 0; (freq_table[i].frequency != CPUFREQ_TABLE_END); i++) {
-	freq = freq_table[i].frequency;
-	if (freq == CPUFREQ_ENTRY_INVALID) {
-	    printk("CPU frequrncy obtained is invalid\n");
-	    continue;
-	}
-	if(frequency <= freq){
-	    printk("Freq selected is table entry %u is %u kHz \n",freq_table[i].index ,freq_table[i].frequency);
-	    frequency = freq ;
-	    break;
-	}
-    }
+    //Getting the next higher cpu 0 freq that is avaialable on the processor
+    frequency = get_table_frequency(0,frequency);
 
     list_for_each(temp, &periodic_task_head){
 	curr = container_of(temp, struct task_struct, periodic_task);
@@ -870,7 +880,27 @@ unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency
     }
     return frequency;
 }
+//Sets the processor frequency to the given pm clock frequency
+//of the task .
+void apply_pmclock(int cpu_no , unsigned long frequency){
 
+    struct cpufreq_policy * lastcpupolicy = cpufreq_cpu_get(cpu_no);
+
+    if(lastcpupolicy == NULL){
+	printk("ERROR : policy obtained is NULL\n");
+    }
+    unsigned int temp_freq ;
+    int ret_val;
+
+    temp_freq = cpufreq_get(cpu_no);
+    printk("DEBUG PM:Current cpu freq before setting %d new frequency is %lu \n",temp_freq, frequency);
+    if((ret_val = __cpufreq_driver_target(lastcpupolicy,frequency,CPUFREQ_RELATION_L))<0){
+	printk("Error :Processor frequency wasn't set\n"); 
+    }
+    temp_freq = cpufreq_get(cpu_no);
+    printk("DEBUG PM:Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min);
+
+}
     static
 void init_rt_bandwidth(struct rt_bandwidth *rt_b, u64 period, u64 runtime)
 {
@@ -5014,6 +5044,7 @@ static void __sched __schedule(void)
     struct timespec temp; //temp variable
     ktime_t time_remaining; //temp variable
     unsigned long flagone;
+    unsigned int temp_freq; //to store current cpu freq for comparison
 
 need_resched:
     preempt_disable();
@@ -5145,6 +5176,10 @@ need_resched:
 			printk("Could not restart budget timer for task %d and leader %d",next->pid,leader->pid);
 		    }
 		}
+
+		//Here if the budget is set and the power scheme is PM Clock 
+		//then if the frequency between prev and next task is different
+		//we need to set the new frequency
 	    }
 	    else if (next->state != TASK_UNINTERRUPTIBLE){
 		//Else if budget is smaller (which should ideally never happen)
@@ -5186,6 +5221,18 @@ need_resched:
     preempt_enable_no_resched();
     if (need_resched())
 	goto need_resched;
+
+    /*if(power_scheme == 2 && next->is_budget_set == 1 &&(timespec_compare(&(leader->budget_time) , &(leader->compute_time))> 0)){
+
+	//Getting the current frequency 
+	temp_freq = cpufreq_get(0);
+	printk(" DEBUG :Prev frequency is %d\n" , temp_freq );
+
+	//Applying the PM clock frequency
+	apply_pmclock( 0 , next->pmclock_freq );
+
+    }*/
+
 }
 
 static inline void sched_submit_work(struct task_struct *tsk)

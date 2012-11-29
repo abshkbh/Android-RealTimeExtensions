@@ -850,6 +850,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid,unsigned long budget, struct times
 asmlinkage int sys_cancelBudget(pid_t pid);
 asmlinkage int sys_waitUntilNextPeriod(pid_t pid);
 asmlinkage int sys_setPMScheme(int pm_scheme);
+asmlinkage int sys_setDisplayBrightness(int value);
 asmlinkage int sys_mycall(int num1,int num2,long long *sum);
 asmlinkage int sys_get_process_count(void);
 asmlinkage int sys_get_current_processes(char *buf,int n);
