@@ -187,7 +187,8 @@ static enum hrtimer_restart sched_rt_period_timer(struct hrtimer *timer)
 
 //Making the size of periodic tasks to 0
 static int periodic_tasks_size = 0;
-static struct list_head periodic_task_head;
+struct list_head periodic_task_head;
+EXPORT_SYMBOL_GPL(periodic_task_head);
 
 long util_bound[11] = {1000, 828, 779, 757, 743, 735, 727, 724, 720, 718, 693};
 
