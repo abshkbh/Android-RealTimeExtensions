@@ -41,7 +41,7 @@ asmlinkage int sys_getLog( pid_t pid, char * buf ){
         printk("Error while copying to user\n");
         return -EFAULT;
     }
-
+    printk("Exiting getLog \n");
     vfree(curr->buf);
     return size;
 

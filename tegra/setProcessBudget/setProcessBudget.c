@@ -33,8 +33,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     struct timespec task_budget;
     unsigned int ret_freq = 0, temp_freq;
     int ret_val;
+    ktime_t p;
     struct task_ct_struct * list;
-
+    
     //Error checks for input arguments
     if (!((period.tv_sec > 0) || (period.tv_nsec > 0))) {
 	printk("Invalid time period\n");
@@ -79,8 +80,6 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     if(curr->is_budget_set == 1){
 	del_periodic_task(&(curr->periodic_task));
     }
-
-    printk("DEBUG: Default policy is %d\n",curr->policy);
 
     //First check if a period timer already exists from a previous edition of this syscall.
     //If yes then we cancel it.
@@ -137,7 +136,20 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
 
     switch(power_scheme){
 	case 0:
+	    
+	    temp_time = (budget / ((lastcpupolicy->cur)/1000)) * 1000;
+	    task_budget = ns_to_timespec(temp_time);
+	     
+	    //Setting periods and budgets
+	    (curr->budget_time).tv_sec = task_budget.tv_sec;
+	    (curr->budget_time).tv_nsec = task_budget.tv_nsec;
+	   
 	    printk("SETPROCESSBUDGET: No PM Scheme selected\n");
+	    p = timespec_to_ktime(curr->time_period);
+	    if(hrtimer_start(&(curr->period_timer), p, HRTIMER_MODE_REL) == 1) {	
+		printk("Could not restart period timer for task %d\n", curr->pid);
+	    }
+
 	    break;
 	case 1:
 	    printk("SETPROCESSBUDGET: SysClock is selected\n");

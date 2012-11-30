@@ -262,12 +262,19 @@ int log_data_point(struct task_struct * curr, struct timespec data){
     int curr_offset;
     struct siginfo info;
     struct task_struct * temp;
-
+    struct task_struct * temp2;
+    
     if(curr->buf_offset >= (2*curr->no_data_points)){
 
 	write_lock(&tasklist_lock);
 	//Sending signal
-	curr->is_log_enabled = 0;
+	temp2 = curr;
+	do {
+	    //Setting flag
+	    temp2->is_log_enabled = 0;
+	}while_each_thread(curr,temp2);
+
+
 	for_each_process(temp){
 	    if(temp->pid == curr->user_pid){
 		printk("LOG: PID of temp is %d\n", temp->pid);
@@ -5258,12 +5265,12 @@ need_resched:
 		//we need to set the new frequency
 		/*if(power_scheme == 2){
 
-		    //Getting the current frequency 
-		    temp_freq = cpufreq_get(0);
-		    printk(" DEBUG :Prev frequency is %d\n" , temp_freq );
+		//Getting the current frequency 
+		temp_freq = cpufreq_get(0);
+		printk(" DEBUG :Prev frequency is %d\n" , temp_freq );
 
-		    //Applying the PM clock frequency
-		    set_pmclock_freq( 0 , next->pmclock_freq );
+		//Applying the PM clock frequency
+		set_pmclock_freq( 0 , next->pmclock_freq );
 
 		}*/
 	    }
@@ -5310,12 +5317,12 @@ need_resched:
 
     if(power_scheme == 2 && next->is_budget_set == 1 &&(timespec_compare(&(leader->budget_time) , &(leader->compute_time))> 0)){
 
-    //Getting the current frequency 
-    temp_freq = cpufreq_get(0);
-    printk(" DEBUG :Prev frequency is %d\n" , temp_freq );
+	//Getting the current frequency 
+	temp_freq = cpufreq_get(0);
+	printk(" DEBUG :Prev frequency is %d\n" , temp_freq );
 
-    //Applying the PM clock frequency
-    set_pmclock_freq( 0 , next->pmclock_freq );
+	//Applying the PM clock frequency
+	set_pmclock_freq( 0 , next->pmclock_freq );
 
     }
 

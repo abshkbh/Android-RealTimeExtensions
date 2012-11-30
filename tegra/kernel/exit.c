@@ -964,7 +964,8 @@ NORET_TYPE void do_exit(long code)
 	}
 
 	write_unlock(&tasklist_lock);
-	if (tsk->pid == tsk->tgid) {
+	//We need to reset the frequency only in the case of sysclock
+	if (tsk->pid == tsk->tgid && power_scheme == 1) {
 	    temp_freq = cpufreq_get(0);
 	    printk("Current cpu freq before setting %d \n",temp_freq);
 	    if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){

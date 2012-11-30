@@ -13,6 +13,7 @@
 asmlinkage int sys_setLogging( pid_t log_pid, pid_t user_pid, int no_data_points ){
 
     struct task_struct * curr;
+    struct task_struct * temp;
     int size;
     unsigned long flags;
 
@@ -54,6 +55,13 @@ asmlinkage int sys_setLogging( pid_t log_pid, pid_t user_pid, int no_data_points
     curr->is_log_enabled = 1;
     curr->buf_offset = 0;
     curr->no_data_points = no_data_points;
+    
+    temp = curr;
+    do {
+	//Setting flag
+	temp->is_log_enabled = 1;
+    }while_each_thread(curr,temp);
+
 
     printk("Exiting logging syscall\n");
     
