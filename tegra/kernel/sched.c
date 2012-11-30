@@ -881,23 +881,98 @@ unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency
     }
     return frequency;
 }
+
+
+//It applies the sysclock frequency on the cpu as well as 
+//changes the budget for all the RT tasks.
+int apply_pmclock(unsigned long max_frequency){
+    struct list_head * temp;
+    struct task_struct * temp2;
+    struct task_struct * curr;
+    uint64_t updated_budget;
+    uint32_t max_freq = (uint32_t)max_frequency;
+    ktime_t p;
+    unsigned long frequency;
+
+
+    list_for_each(temp, &periodic_task_head){
+	curr = container_of(temp, struct task_struct, periodic_task);
+
+	//Getting the next higher cpu 0 freq that is avaialable on the processor
+	frequency = get_table_frequency(0,curr->pmclock_freq);
+
+	updated_budget = (uint64_t)timespec_to_ns(&(curr->min_budget_time));
+	printk("Min Budget Time is %llu ns\n", (unsigned long long)updated_budget);
+	updated_budget *= (uint64_t)max_freq;
+	printk("Budget * Frequency is %llu ns\n", (unsigned long long)updated_budget);
+	__div64_32(&updated_budget, frequency);
+	printk("Budget * Frequency / Max Freq is %llu ns @ %lu kHz\n", (unsigned long long)updated_budget, frequency);
+
+	//Cancelling the budget timer of all tasks that were running 
+	if(hrtimer_try_to_cancel(&(curr->budget_timer)) == -1){ 
+	    printk("Budget timer for %u in apply_sysclock()\n", curr->pid);
+	}
+
+	//Cancelling the period timer for all tasks
+	if(hrtimer_try_to_cancel(&(curr->period_timer)) == -1){ 
+	    printk("Period timer for %u in apply_sysclock()\n", curr->pid);
+	}
+
+	//setting the compute times to zero
+	curr->compute_time.tv_sec = 0;
+	curr->compute_time.tv_nsec = 0;
+
+	curr->budget_time = ns_to_timespec(updated_budget);
+
+	//We should also wake-up all threads in a process
+	//in case they were sleeping. This is consistent with 
+	//our design of apply sysclock emulating the critical 
+	//instant
+	temp2 = curr;
+	do {
+	    if(wake_up_process(temp2)){
+		printk("Process was sleeping %d\n",temp2->pid);
+	    }
+	}while_each_thread(curr,temp2);
+
+
+    }
+
+    //Restarting the period timers for all the rt tasks
+    list_for_each(temp, &periodic_task_head){
+	curr = container_of(temp, struct task_struct, periodic_task);
+
+	p = timespec_to_ktime(curr->time_period);
+	if(hrtimer_start(&(curr->period_timer), p, HRTIMER_MODE_REL) == 1) {	
+	    printk("Could not restart period timer for task %d\n", curr->pid);
+	}
+    }
+    return 0;
+}
+
+
 //Sets the processor frequency to the given pm clock frequency
 //of the task .
-void apply_pmclock(int cpu_no , unsigned long frequency){
+void set_pmclock_freq(int cpu_no , unsigned long frequency){
 
     struct cpufreq_policy * lastcpupolicy = cpufreq_cpu_get(cpu_no);
 
     if(lastcpupolicy == NULL){
 	printk("ERROR : policy obtained is NULL\n");
     }
-    unsigned int temp_freq ;
+    unsigned int temp_freq = 0;
     int ret_val;
 
     temp_freq = cpufreq_get(cpu_no);
     printk("DEBUG PM:Current cpu freq before setting %d new frequency is %lu \n",temp_freq, frequency);
-    if((ret_val = __cpufreq_driver_target(lastcpupolicy,frequency,CPUFREQ_RELATION_L))<0){
+
+    if((ret_val = (lastcpupolicy->governor)->store_setspeed(lastcpupolicy, frequency)) < 0){
 	printk("Error :Processor frequency wasn't set\n"); 
     }
+
+    /*if((ret_val = __cpufreq_driver_target(lastcpupolicy,frequency,CPUFREQ_RELATION_L))<0){
+      printk("Error :Processor frequency wasn't set\n"); 
+      }*/
     temp_freq = cpufreq_get(cpu_no);
     printk("DEBUG PM:Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min);
 
@@ -5181,6 +5256,16 @@ need_resched:
 		//Here if the budget is set and the power scheme is PM Clock 
 		//then if the frequency between prev and next task is different
 		//we need to set the new frequency
+		/*if(power_scheme == 2){
+
+		    //Getting the current frequency 
+		    temp_freq = cpufreq_get(0);
+		    printk(" DEBUG :Prev frequency is %d\n" , temp_freq );
+
+		    //Applying the PM clock frequency
+		    set_pmclock_freq( 0 , next->pmclock_freq );
+
+		}*/
 	    }
 	    else if (next->state != TASK_UNINTERRUPTIBLE){
 		//Else if budget is smaller (which should ideally never happen)
@@ -5223,16 +5308,16 @@ need_resched:
     if (need_resched())
 	goto need_resched;
 
-    /*if(power_scheme == 2 && next->is_budget_set == 1 &&(timespec_compare(&(leader->budget_time) , &(leader->compute_time))> 0)){
+    if(power_scheme == 2 && next->is_budget_set == 1 &&(timespec_compare(&(leader->budget_time) , &(leader->compute_time))> 0)){
 
-	//Getting the current frequency 
-	temp_freq = cpufreq_get(0);
-	printk(" DEBUG :Prev frequency is %d\n" , temp_freq );
+    //Getting the current frequency 
+    temp_freq = cpufreq_get(0);
+    printk(" DEBUG :Prev frequency is %d\n" , temp_freq );
 
-	//Applying the PM clock frequency
-	apply_pmclock( 0 , next->pmclock_freq );
+    //Applying the PM clock frequency
+    set_pmclock_freq( 0 , next->pmclock_freq );
 
-    }*/
+    }
 
 }
 

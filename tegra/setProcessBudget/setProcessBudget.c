@@ -17,6 +17,7 @@ long sysclock(unsigned long max_frequency, struct task_ct_struct * list);
 unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency);
 int set_rt_priorities(void);
 void make_task_ct_struct(struct task_ct_struct ** list);
+int apply_pmclock(unsigned long max_frequency);
 void pmclock(struct task_ct_struct * list);
 
 extern int power_scheme;
@@ -30,7 +31,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     unsigned long max_frequency = (lastcpupolicy->cpuinfo).max_freq / 1000 ; //Getting MAX frequency in MHz
     unsigned long sysclock_freq = 0;
     struct timespec task_budget;
-    unsigned int ret_freq, temp_freq;
+    unsigned int ret_freq = 0, temp_freq;
     int ret_val;
     struct task_ct_struct * list;
 
@@ -156,6 +157,7 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
 	    sysclock_freq = sysclock(max_frequency, list);
 	    printk("Sysclock frequency is %lu KHz\n", sysclock_freq);
 	    pmclock(list);
+	    apply_pmclock((lastcpupolicy->cpuinfo).max_freq);
 	    kfree(list);
 	    break;
     }
@@ -169,6 +171,8 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
 
     //Setting the frequency only for SYSCLOCK
     if(power_scheme == 1){
+	lastcpupolicy->max = 1300000;
+	lastcpupolicy->min = 51000;
 	temp_freq = cpufreq_get(0);
 	printk("Current cpu freq before setting %d \n",temp_freq);
 	if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){
