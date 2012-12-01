@@ -1615,6 +1615,9 @@ struct task_struct {
 	/* List for sysclock as well as pm clock*/
 	struct list_head periodic_task;
 
+	/* List for sysclock as well as pm clock*/
+	struct list_head per_cpu_task;
+
 	/* This timespec denotes the min budget that the task will use at fmax
 	it is used by sysclock */
 	struct timespec min_budget_time ;
@@ -1630,6 +1633,7 @@ struct task_struct {
 struct task_ct_struct{
     unsigned long budget;
     unsigned long period;
+    unsigned long long util;
     struct task_struct * task;
 };
 

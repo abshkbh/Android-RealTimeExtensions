@@ -128,6 +128,8 @@
  */
 #define RUNTIME_INF	((u64)~0ULL)
 
+//Maximum CPU's present on Nexus Tablet
+#define MAX_CPU 4
 
 //Our declaration to use for division
 uint32_t __div64_32(uint64_t *dividend, uint32_t divisor);
@@ -190,7 +192,222 @@ static int periodic_tasks_size = 0;
 struct list_head periodic_task_head;
 EXPORT_SYMBOL_GPL(periodic_task_head);
 
+//This array stores list heads of per cpu periodic 
+//tasks
+struct list_head per_cpu_list[MAX_CPU];
+EXPORT_SYMBOL_GPL(per_cpu_list);
+//Number of periodic tasks present on core in CPU
+int per_cpu_list_size[MAX_CPU];
+EXPORT_SYMBOL_GPL(per_cpu_list_size);
+
 long util_bound[11] = {1000, 828, 779, 757, 743, 735, 727, 724, 720, 718, 693};
+
+//All CPU's are fully free in the beginning
+unsigned long long cpu_util[MAX_CPU] = {1000 , 1000 , 1000 , 1000};
+EXPORT_SYMBOL_GPL(cpu_util);
+
+int current_bins = 1;
+EXPORT_SYMBOL_GPL(current_bins);
+
+
+// Our own prototypes
+void my_swap(struct task_ct_struct *a, struct task_ct_struct *b);
+void sort_periodic_tasklist(struct task_ct_struct *list);
+void bubble_sort(struct task_ct_struct *start, int total_tasks);
+int bin_packing(int scheme);
+long convert_to_usecs(struct timespec time);
+int check_admission_per_cpu(unsigned long budget, unsigned long period,int cpu);
+int __check_admission(struct task_ct_struct list[], int size);
+
+
+
+
+//converts the time to usec
+long convert_to_usecs(struct timespec time){
+    return time.tv_sec*1000000 + time.tv_nsec/1000;
+}
+
+
+
+
+//Checks whether the new RT task can be admitted to the system or not
+int check_admission_per_cpu(unsigned long budget, unsigned long period,int cpu){
+
+    long temp_budget, temp_period;
+    char flag = 0;
+    //Getting number of tasks on given cpu
+    int size = per_cpu_list_size[cpu];
+
+    struct task_ct_struct list[size + 1];
+    struct list_head * temp;
+    struct task_struct * curr;
+
+    long util = 0;
+    int count = 0;
+
+    printk("In check admission %d\n", periodic_tasks_size);
+
+    //Checking admission of the first task
+    if(size == 0){
+	util = (budget * SCALE_UP_FACTOR)/period;
+	if(util > 1000){
+	    return 0;
+	} else{
+	    return 1;
+	}
+    }
+
+    //Creating a CT array with the new task at the appropriate position
+    list_for_each(temp, &per_cpu_list[cpu]){
+	curr = container_of(temp, struct task_struct, per_cpu_task);
+	temp_budget = convert_to_usecs(curr->budget_time);
+	temp_period = convert_to_usecs(curr->time_period);
+
+	if(flag == 0 && period <= temp_period){
+	    flag = 1;
+	    list[count].budget = budget;
+	    list[count].period = period;
+	    count++;
+	}
+
+	list[count].budget = temp_budget;
+	list[count].period = temp_period;
+	count++;
+    }
+
+    if(flag == 0){	
+	list[count].budget = budget;
+	list[count].period = period;
+    }
+
+    return __check_admission(list, size+1);
+}
+
+/*
+ * This function actually takes two pointers for the task_info structures
+ * and makes a deep copy and swaps them.
+ */
+void my_swap(struct task_ct_struct *a, struct task_ct_struct *b){
+
+    struct task_ct_struct temp;
+    temp.budget = a->budget;
+    temp.period = a->period;
+    temp.util  = a->util;
+    temp.task  = a->task;
+
+    a->budget = b->budget;
+    a->period = b->period;
+    a->util  = b->util;
+    a->task  = b->task;
+
+    b->budget = temp.budget;
+    b->period = temp.period;
+    b->util = temp.util;
+    b->task = temp.task;
+} 
+
+
+
+void sort_periodic_tasklist(struct task_ct_struct *list) {
+    struct list_head * temp;
+    struct task_struct * curr;
+    int count = 0;
+    unsigned long temp_budget = 0;
+    unsigned long temp_period = 0;
+
+    printk("In sort periodic list %d\n", periodic_tasks_size);
+
+    //Creating a CT array with the new task at the appropriate position
+    list_for_each(temp, &periodic_task_head){
+	curr = container_of(temp, struct task_struct, periodic_task);
+	temp_budget = convert_to_usecs(curr->min_budget_time);
+	temp_period = convert_to_usecs(curr->time_period);
+	list[count].budget = temp_budget;
+	list[count].period = temp_period;
+	list[count].util = ((unsigned long long)temp_budget * SCALE_UP_FACTOR) / temp_period;
+	list[count].task = curr;
+	count++;
+    }
+
+    bubble_sort(list,periodic_tasks_size);
+    printk("Sorted list is :\n");
+    for(count = 0; count < periodic_tasks_size ; count++){
+	printk("Budget: %lu, Period : %lu\n",list[count].budget, list[count].period);
+    }
+
+}
+
+void bubble_sort(struct task_ct_struct *start, int total_tasks){
+
+    int i,j, flag = 1;
+    for ( i = 1; i <= total_tasks && flag; i++) {
+	flag = 0;
+	for (j = 0; j < total_tasks - i; j++) {
+	    if(start[j+1].util > start[j].util) {
+		my_swap(&start[j], &start[j+1]);
+		my_swap((start + j), (start + j + 1));
+		flag = 1;
+	    }
+	}
+    } 
+}
+
+
+//This functions packs our current periodic tasks 
+//into bins. On success it sets affinity and returns number of
+//bins and on failure it returns 0.
+int bin_packing(int scheme) {
+
+    int current_bins = 1;
+    int max_bins = 4;
+    unsigned long long utilization;
+    int i;
+    int j;
+    int start_bin = 1;
+    int best_fit_bin = 0;
+    int binfound = 0;
+    struct task_ct_struct list[periodic_tasks_size];
+
+    if(periodic_tasks_size <= 0) {
+	printk("ERR : No tasks to do bin packing on\n");
+	return 0;
+    }
+
+    //First we store and sort periodic tasks according
+    //to util via this function
+    sort_periodic_tasklist(list);
+
+    //First-Fit Decreasing 
+    if (scheme == 0) {
+	for(i = 0 ; i < periodic_tasks_size ; i++) {
+	    utilization = list[i].util;
+	    binfound = 0;
+	    while (!binfound) {
+		for(j = 0 ; j < current_bins ; j++) {
+		    if(check_admission_per_cpu(list[i].budget,list[i].period,j) == 1) {
+			//Set affinity
+			printk("Task with C = %ld is on bin %d\n",list[i].budget,j + 1);
+			cpu_util[j] -= utilization;
+			binfound = 1;
+			break;
+		    }
+		}
+		if ((j == current_bins) && (!binfound)) {
+		    current_bins++;
+		    if(current_bins > max_bins){
+			return 0; // More bins than 4
+		    }
+		}
+
+	    }
+
+	}
+
+    }
+
+    printk("Total bins %d\n",current_bins);
+    return current_bins;
+}
 
 //Callback function for timer restart
 enum hrtimer_restart budget_timer_callback(struct hrtimer * timer) {
@@ -263,7 +480,7 @@ int log_data_point(struct task_struct * curr, struct timespec data){
     struct siginfo info;
     struct task_struct * temp;
     struct task_struct * temp2;
-    
+
     if(curr->buf_offset >= (2*curr->no_data_points)){
 
 	write_lock(&tasklist_lock);
@@ -306,10 +523,6 @@ int log_data_point(struct task_struct * curr, struct timespec data){
     return 0;
 }
 
-//converts the time to usec
-long convert_to_usecs(struct timespec time){
-    return time.tv_sec*1000000 + time.tv_nsec/1000;
-}
 
 //Gives the ceiling for the RT test
 long ceiling (long numerator, long denominator ){
@@ -423,6 +636,7 @@ int check_admission(struct timespec budget, struct timespec period){
     return __check_admission(list, periodic_tasks_size+1);
 }
 EXPORT_SYMBOL_GPL(check_admission);
+
 
 //Adds a new periodic task to the link list
 void add_periodic_task(struct list_head * new){
