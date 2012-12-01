@@ -409,10 +409,15 @@
 #define __NR_waitUntilNextPeriod	(__NR_SYSCALL_BASE+380)
 #define __NR_setPMScheme	        (__NR_SYSCALL_BASE+381)
 #define __NR_setDisplayBrightness       (__NR_SYSCALL_BASE+382)
-#define __NR_get_process_count		(__NR_SYSCALL_BASE+383)
-#define __NR_get_current_processes	(__NR_SYSCALL_BASE+384)
-#define __NR_set_logging		(__NR_SYSCALL_BASE+385)
-#define __NR_get_log			(__NR_SYSCALL_BASE+386)
+#define __NR_setBinPacking	        (__NR_SYSCALL_BASE+383)
+#define __NR_stopScheduling	        (__NR_SYSCALL_BASE+384)
+#define __NR_startScheduling	        (__NR_SYSCALL_BASE+385)
+#define __NR_setGlobalSysClock	        (__NR_SYSCALL_BASE+386)
+#define __NR_cancelBinPacking	        (__NR_SYSCALL_BASE+387)
+#define __NR_get_process_count		(__NR_SYSCALL_BASE+388)
+#define __NR_get_current_processes	(__NR_SYSCALL_BASE+389)
+#define __NR_set_logging		(__NR_SYSCALL_BASE+390)
+#define __NR_get_log			(__NR_SYSCALL_BASE+391)
 
 /*
  * The following SWIs are ARM private.

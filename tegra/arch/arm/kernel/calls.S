@@ -392,10 +392,15 @@
 /* 380 */	CALL(sys_waitUntilNextPeriod)
 /* 381 */	CALL(sys_setPMScheme)
 /* 382 */	CALL(sys_setDisplayBrightness)
-/* 383 */	CALL(sys_get_process_count)
-/* 384 */	CALL(sys_get_current_processes)
-/* 385 */	CALL(sys_setLogging)
-/* 386 */	CALL(sys_getLog)
+/* 383 */       CALL(sys_setBinPacking)
+/* 384 */       CALL(sys_stopScheduling)
+/* 385 */       CALL(sys_startScheduling)
+/* 386 */       CALL(sys_setGlobalSysClock)
+/* 387 */       CALL(sys_cancelBinPacking)
+/* 388 */	CALL(sys_get_process_count)
+/* 389 */	CALL(sys_get_current_processes)
+/* 390 */	CALL(sys_setLogging)
+/* 391 */	CALL(sys_getLog)
 #ifndef syscalls_counted
 .equ syscalls_padding, ((NR_syscalls + 3) & ~3) - NR_syscalls
 #define syscalls_counted
