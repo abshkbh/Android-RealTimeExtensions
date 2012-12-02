@@ -141,13 +141,12 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     //Adding the task in our periodic linked list
     add_periodic_task(&(curr->periodic_task));
 
-    //TODO: We need to revamp this
-    //Setting the rt proirities 
-    if (set_rt_priorities() < 0) {
-	printk("Error setting rt priorities\n");
-    }
-
     if(is_bin_packing_set == 0){
+	//Setting the rt proirities 
+	if (set_rt_priorities() < 0) {
+	    printk("Error setting rt priorities\n");
+	}
+
 	switch(power_scheme){
 	    case 0:
 

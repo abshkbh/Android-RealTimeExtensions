@@ -8,13 +8,16 @@
 #include <linux/cpufreq.h>
 
 void del_periodic_task(struct list_head * entry);
+void del_task_cpu(struct list_head * entry, int cpu);
 long sysclock(unsigned long max_frequency, struct task_ct_struct * list);
 unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency);
 int set_rt_priorities(void);
 void make_task_ct_struct(struct task_ct_struct ** list);
 void pmclock(struct task_ct_struct * list);
+int set_rt_priorities_per_cpu(int cpu);
 
 extern int power_scheme;
+extern int is_bin_packing_set;
 
 asmlinkage int sys_cancelBudget(pid_t pid) {
 
@@ -81,6 +84,11 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
     //Removing the periodic task from the list
     del_periodic_task(&(curr->periodic_task));
 
+    if(is_bin_packing_set == 1){
+	del_task_cpu(&(curr->per_cpu_task), curr->cpu_no);
+	set_rt_priorities_per_cpu(curr->cpu_no);
+    }
+
     //Waking up the process in case if it was sleeping
     temp = curr;
     do {
@@ -93,9 +101,11 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
 
     //Setting the new frequency for the system
 
-    //Setting the rt proirities 
-    if (set_rt_priorities() < 0) {
-	printk("Error setting rt priorities\n");
+    //Setting the rt proirities
+    if(is_bin_packing_set == 0){
+	if (set_rt_priorities() < 0) {
+	    printk("Error setting rt priorities\n");
+	}
     }
 
     if(power_scheme == 1){

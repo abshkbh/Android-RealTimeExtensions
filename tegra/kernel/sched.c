@@ -244,6 +244,17 @@ long convert_to_usecs(struct timespec time){
     return time.tv_sec*1000000 + time.tv_nsec/1000;
 }
 
+
+//deletes the task from the per cpu list
+void del_task_cpu(struct list_head * entry, int cpu){
+    printk("In deleting task for cpu %d\n", cpu);
+    if(per_cpu_list_size[cpu] > 0){
+	per_cpu_list_size[cpu]--;
+	list_del(entry);
+    }
+}
+EXPORT_SYMBOL_GPL(del_task_cpu);
+
 //Clears all the cpu lists when the bin packing fails
 void clear_cpu_lists( void ){
     int i;
@@ -994,7 +1005,6 @@ int set_rt_priorities(void ){
 	    set_tsk_need_resched(temp2);
 	}while_each_thread(curr,temp2);
 
-
 	//Never let rt_prio go less than zero i.e MIN_RT_PRIO
 	if(rt_prio > 99) {
 	    rt_prio = 99;
@@ -1006,6 +1016,57 @@ int set_rt_priorities(void ){
     return 0;
 }
 EXPORT_SYMBOL_GPL(set_rt_priorities);
+
+
+int set_rt_priorities_per_cpu(int cpu){
+
+    struct list_head * temp;
+    struct task_struct * temp2;
+    struct task_struct * curr;
+    int rt_prio = 0, retval;
+    struct timespec prev_deadline;
+    struct sched_param rt_sched_parameters;
+
+    //When there are no tasks in the system
+    //there is no one to set priority on
+    if(per_cpu_list_size[cpu] <= 0){
+	return -1;
+    }
+
+    prev_deadline.tv_sec = 0;
+    prev_deadline.tv_nsec = 0;
+
+    list_for_each(temp, &(per_cpu_list[cpu])){
+	curr = container_of(temp, struct task_struct, per_cpu_task);
+
+	if (timespec_compare(&(curr->time_period),&(prev_deadline)) > 0) { 
+	    rt_prio++;
+	}
+	printk("Setting %d to rt_prio %d\n",curr->pid,rt_prio);
+	//Setting user_rt_prio to priority given by user and
+	//sched policy to SCHED_FIFO
+	temp2 = curr;
+	do {
+	    //Setting flag
+	    temp2->rt_priority = rt_prio;
+	    rt_sched_parameters.sched_priority = rt_prio;
+	    retval = sched_setscheduler_nocheck(temp2,SCHED_FIFO,&rt_sched_parameters);
+	    printk("Retval = %d\n",retval);
+	    set_tsk_need_resched(temp2);
+	}while_each_thread(curr,temp2);
+
+	//Never let rt_prio go more than 99 i.e MAX_RT_PRIO-1
+	if(rt_prio > 99) {
+	    rt_prio = 99;
+	}
+
+	prev_deadline.tv_sec = (curr->time_period).tv_sec;
+	prev_deadline.tv_nsec = (curr->time_period).tv_nsec;
+    }
+    return 0;
+}
+EXPORT_SYMBOL_GPL(set_rt_priorities_per_cpu);
+
 
 //Removes a periodic task from the linked list
 void del_periodic_task(struct list_head * entry){

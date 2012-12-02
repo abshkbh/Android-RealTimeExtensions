@@ -59,13 +59,16 @@
 #include <asm/mmu_context.h>
 
 void del_periodic_task(struct list_head * entry);
+void del_task_cpu(struct list_head * entry, int cpu);
 long sysclock(unsigned long max_frequency, struct task_ct_struct * list);
 unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency);
 int set_rt_priorities(void);
 void make_task_ct_struct(struct task_ct_struct ** list);
 void pmclock(struct task_ct_struct * list);
+int set_rt_priorities_per_cpu(int cpu);
 
 extern int power_scheme;
+extern int is_bin_packing_set;
 
 static void exit_mm(struct task_struct * tsk);
 
@@ -935,15 +938,22 @@ NORET_TYPE void do_exit(long code)
 
 	    del_periodic_task(&(tsk->periodic_task));
 
-	    //Setting the rt proirities 
-	    if (set_rt_priorities() < 0) {
-		printk("Error setting rt priorities\n");
+	    if(is_bin_packing_set == 1){
+		del_task_cpu(&(tsk->per_cpu_task), tsk->cpu_no);
+		set_rt_priorities_per_cpu(tsk->cpu_no);
+	    }
+
+	    if(is_bin_packing_set == 0){
+		//Setting the rt proirities 
+		if (set_rt_priorities() < 0) {
+		    printk("Error setting rt priorities\n");
+		}
 	    }
 
 	    //Getting the sys clock frequency
 
 	    //Changing the frequency in SYSCLOCK/PM Clock
-	    if(power_scheme == 1){
+	    if(power_scheme == 1 && is_bin_packing_set == 0){
 		make_task_ct_struct(&list);
 		sysclock_freq = sysclock(max_frequency, list);
 		printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
@@ -952,7 +962,7 @@ NORET_TYPE void do_exit(long code)
 		    printk("Failed to set the cpu feq after sysclock calculations \n");
 		}
 		kfree(list);
-	    } else if (power_scheme == 2){
+	    } else if (power_scheme == 2 && is_bin_packing_set == 0){
 		make_task_ct_struct(&list);
 		sysclock_freq = sysclock(max_frequency, list);
 		printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
@@ -977,7 +987,6 @@ NORET_TYPE void do_exit(long code)
 	}
 
     }
-
 
     profile_task_exit(tsk);
 

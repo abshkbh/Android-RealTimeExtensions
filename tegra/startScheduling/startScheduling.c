@@ -11,6 +11,7 @@ extern int is_bin_packing_set ;
 extern struct list_head per_cpu_list[];
 extern int per_cpu_list_size[];
 void clear_cpu_list(void);
+int set_rt_priorities_per_cpu(int cpu);
 
 asmlinkage int sys_startScheduling( void ) {
 
@@ -28,6 +29,8 @@ asmlinkage int sys_startScheduling( void ) {
 	if(per_cpu_list_size[i] > 0){
 	    list_for_each(temp, &(per_cpu_list[i])){
 		curr = container_of(temp, struct task_struct, per_cpu_task);
+		
+		set_rt_priorities_per_cpu(i);
 
 		temp2 = curr;
 
