@@ -492,7 +492,11 @@ int bin_packing(int scheme) {
     int prev_bin = 0;
     int binfound = 0;
     struct task_ct_struct list[periodic_tasks_size];
-
+    struct cpumask mask ;  
+    int ret_val;
+    
+    cpumask_clear(&mask);
+    
     if(periodic_tasks_size <= 0) {
 	printk("ERR : No tasks to do bin packing on\n");
 	return 0;
@@ -512,7 +516,18 @@ int bin_packing(int scheme) {
 		    if(check_admission_per_cpu(list[i].budget,list[i].period,j) == 1) {
 			//Set affinity
 			printk("Task with C = %ld is on bin %d\n",list[i].budget,j + 1);
-			add_task_to_cpu(&((list[i].task)->per_cpu_task), j);
+			
+			//Setting the cpu in the task struct
+			list[i].task->on_cpu = j ;
+
+			cpumask_set_cpu((j), &mask);
+
+			if((ret_val = sched_setaffinity((list[i].task)->pid , &mask))< 0){
+			    printk("ERROR : COULD NOT SET AFFINITY \n");
+			}
+
+
+    			add_task_to_cpu(&((list[i].task)->per_cpu_task), j);
 			cpu_util[j] -= utilization;
 			binfound = 1;
 			break;
@@ -539,6 +554,17 @@ int bin_packing(int scheme) {
 		if(check_admission_per_cpu(list[i].budget,list[i].period,prev_bin) == 1){
 		    //Set Affinity
 		    printk("Task with C = %ld is on bin %d\n",list[i].budget, prev_bin+1);
+		    
+		    //Setting the cpu in the task struct
+			list[i].task->on_cpu = prev_bin ;
+
+			cpumask_set_cpu((prev_bin), &mask);
+
+			if((ret_val = sched_setaffinity(list[i].task->pid , &mask))< 0){
+			    printk("ERROR : COULD NOT SET AFFINITY \n");
+			}
+
+
 		    cpu_util[prev_bin] -= utilization;
 		    add_task_to_cpu(&((list[i].task)->per_cpu_task), prev_bin);
 		    binfound = 1;
@@ -551,6 +577,17 @@ int bin_packing(int scheme) {
 		//Set Affinity
 		current_bins++;
 		printk("Task with C = %ld is on bin %d\n",list[i].budget, current_bins);
+		    
+		    //Setting the cpu in the task struct
+			list[i].task->on_cpu = current_bins - 1 ;
+
+			cpumask_set_cpu(((current_bins - 1)), &mask);
+
+			if((ret_val = sched_setaffinity(list[i].task->pid , &mask))< 0){
+			    printk("ERROR : COULD NOT SET AFFINITY \n");
+			}
+
+
 		cpu_util[current_bins-1] -= utilization;
 		add_task_to_cpu(&((list[i].task)->per_cpu_task), current_bins-1);
 		prev_bin = current_bins-1;
@@ -576,6 +613,17 @@ int bin_packing(int scheme) {
 		    printk("Best Fit Bin is %d\n", best_fit_bin);
 		    //Set affinity
 		    printk("Task with C = %ld is on bin %d\n",list[i].budget,(best_fit_bin + 1));
+		    
+		    //Setting the cpu in the task struct
+			list[i].task->on_cpu = best_fit_bin;
+
+			cpumask_set_cpu((best_fit_bin), &mask);
+
+			if((ret_val = sched_setaffinity(list[i].task->pid , &mask))< 0){
+			    printk("ERROR : COULD NOT SET AFFINITY \n");
+			}
+
+
 		    add_task_to_cpu(&((list[i].task)->per_cpu_task), best_fit_bin);
 		    cpu_util[best_fit_bin] -= utilization;
 		    binfound = 1;
@@ -611,6 +659,17 @@ int bin_packing(int scheme) {
 		    //Set affinity
 		    printk("Best Fit Bin is %d\n", best_fit_bin);
 		    printk("Task with C = %ld is on bin %d\n",list[i].budget,(best_fit_bin + 1));
+		    
+		    //Setting the cpu in the task struct
+			list[i].task->on_cpu = best_fit_bin;
+
+			cpumask_set_cpu((best_fit_bin), &mask);
+
+			if((ret_val = sched_setaffinity(list[i].task->pid , &mask))< 0){
+			    printk("ERROR : COULD NOT SET AFFINITY \n");
+			}
+
+
 		    cpu_util[best_fit_bin] -= utilization;
 		    add_task_to_cpu(&((list[i].task)->per_cpu_task), best_fit_bin);
 		    binfound = 1;
