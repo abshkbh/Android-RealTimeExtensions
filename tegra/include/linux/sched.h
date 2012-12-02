@@ -1628,6 +1628,9 @@ struct task_struct {
 	/*Min freq value returned by appllying sysclock to this task*/
 	unsigned long alpha;
 
+	/*Cpu on which the task is scheduled by the pin policy scheme*/
+	int cpu_no;
+
 };
 
 struct task_ct_struct{
