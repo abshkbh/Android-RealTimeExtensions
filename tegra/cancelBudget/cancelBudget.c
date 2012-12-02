@@ -49,13 +49,13 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
     do {
 	temp->is_budget_set = 0;
 	rt_sched_parameters.sched_priority = 0;
-	curr->policy = SCHED_NORMAL ;	
 	printk(" DEBUG : Policy before cancel budget is %d\n" , temp->policy);
 	ret_val = sched_setscheduler_nocheck(temp, SCHED_NORMAL, &rt_sched_parameters);
 	
 	printk(" DEBUG : Policy after cancel budget is %d\n" , temp->policy);
 	printk("Retval = %d\n",ret_val);
 	printk("Cancelled Budget for %d\n",temp->pid);
+    
     }while_each_thread(curr,temp);
 
     //First check if a period timer already exists from a previous edition of this syscall.
