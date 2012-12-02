@@ -21,6 +21,7 @@ int apply_pmclock(unsigned long max_frequency);
 void pmclock(struct task_ct_struct * list);
 
 extern int power_scheme;
+extern int is_bin_packing_set;
 
 asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct timespec period) {
 
@@ -62,12 +63,15 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
 	write_unlock(&tasklist_lock);
     	return -EINVAL;
     }
-
-    if(check_admission(task_budget, period) == 0){
-	 printk("Cant add task to the taskset\n");
-	 write_unlock(&tasklist_lock);
-	 return -EPERM;
-    } 
+    
+    //We need to do it only in the case when we are running tasks without bin packing
+    if(is_bin_packing_set == 0){
+	if(check_admission(task_budget, period) == 0){
+	    printk("Cant add task to the taskset\n");
+	    write_unlock(&tasklist_lock);
+	    return -EPERM;
+	} 
+    }
 
     //Finding task struct given its pid
     curr = (struct task_struct *) find_task_by_vpid(pid);
@@ -77,6 +81,9 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
 	return -ESRCH;
     }
 
+    //If the task already had budget we are essentially changing the budget
+    //So the task should go in a new place in the global list.
+    //Thus, we delete the task and then reinsert it in the list.
     if(curr->is_budget_set == 1){
 	del_periodic_task(&(curr->periodic_task));
     }
@@ -108,7 +115,14 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     }
 
     //Setting flag
-    curr->is_budget_set = 1;
+    if(is_bin_packing_set == 0){
+	curr->is_budget_set = 1;
+	temp = curr;
+	do {
+	    //Setting flag
+	    temp->is_budget_set = 1;
+	}while_each_thread(curr,temp);
+    }
 
     //Setting periods and budgets
     (curr->time_period).tv_sec = period.tv_sec;
@@ -118,60 +132,63 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     (curr->min_budget_time).tv_sec = task_budget.tv_sec;
     (curr->min_budget_time).tv_nsec = task_budget.tv_nsec;
 
-    temp = curr;
-    do {
-	//Setting flag
-	temp->is_budget_set = 1;
-    }while_each_thread(curr,temp);
+    if(is_bin_packing_set == 1){
+	//Setting the budget in case of bin packing
+	(curr->budget_time).tv_sec = task_budget.tv_sec;
+	(curr->budget_time).tv_nsec = task_budget.tv_nsec;
+    }
 
     //Adding the task in our periodic linked list
     add_periodic_task(&(curr->periodic_task));
 
+    //TODO: We need to revamp this
     //Setting the rt proirities 
     if (set_rt_priorities() < 0) {
 	printk("Error setting rt priorities\n");
     }
 
-    printk("DEBUG: Updated policy is %d\n",curr->policy);
+    if(is_bin_packing_set == 0){
+	switch(power_scheme){
+	    case 0:
 
-    switch(power_scheme){
-	case 0:
-	    
-	    temp_time = (budget / ((lastcpupolicy->cur)/1000)) * 1000;
-	    task_budget = ns_to_timespec(temp_time);
-	     
-	    //Setting periods and budgets
-	    (curr->budget_time).tv_sec = task_budget.tv_sec;
-	    (curr->budget_time).tv_nsec = task_budget.tv_nsec;
-	   
-	    printk("SETPROCESSBUDGET: No PM Scheme selected\n");
-	    p = timespec_to_ktime(curr->time_period);
-	    if(hrtimer_start(&(curr->period_timer), p, HRTIMER_MODE_REL) == 1) {	
-		printk("Could not restart period timer for task %d\n", curr->pid);
-	    }
+		temp_time = (budget / ((lastcpupolicy->cur)/1000)) * 1000;
+		task_budget = ns_to_timespec(temp_time);
 
-	    break;
-	case 1:
-	    printk("SETPROCESSBUDGET: SysClock is selected\n");
-	    //Getting the sys clock frequency
-	    make_task_ct_struct(&list);
-	    sysclock_freq = sysclock(max_frequency, list);
-	    printk("Sysclock frequency is %lu KHz\n", sysclock_freq);
-	    if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
-		printk("Failed to set the cpu feq after sysclock calculations \n");
-	    } 
-	    kfree(list);
-	    break;
-	case 2:
-	    //Getting the PM clock frequency
-	    printk("SETPROCESSBUDGET: PMClock is selected\n");
-	    make_task_ct_struct(&list);
-	    sysclock_freq = sysclock(max_frequency, list);
-	    printk("Sysclock frequency is %lu KHz\n", sysclock_freq);
-	    pmclock(list);
-	    apply_pmclock((lastcpupolicy->cpuinfo).max_freq);
-	    kfree(list);
-	    break;
+		//Setting periods and budgets
+		(curr->budget_time).tv_sec = task_budget.tv_sec;
+		(curr->budget_time).tv_nsec = task_budget.tv_nsec;
+
+		printk("SETPROCESSBUDGET: No PM Scheme selected\n");
+		p = timespec_to_ktime(curr->time_period);
+		if(hrtimer_start(&(curr->period_timer), p, HRTIMER_MODE_REL) == 1) {	
+		    printk("Could not restart period timer for task %d\n", curr->pid);
+		}
+
+		break;
+	    case 1:
+		printk("SETPROCESSBUDGET: SysClock is selected\n");
+		//Getting the sys clock frequency
+		make_task_ct_struct(&list);
+		sysclock_freq = sysclock(max_frequency, list);
+		printk("Sysclock frequency is %lu KHz\n", sysclock_freq);
+		if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
+		    printk("Failed to set the cpu feq after sysclock calculations \n");
+		} 
+		kfree(list);
+		break;
+	    case 2:
+		//Getting the PM clock frequency
+		printk("SETPROCESSBUDGET: PMClock is selected\n");
+		make_task_ct_struct(&list);
+		sysclock_freq = sysclock(max_frequency, list);
+		printk("Sysclock frequency is %lu KHz\n", sysclock_freq);
+		pmclock(list);
+		apply_pmclock((lastcpupolicy->cpuinfo).max_freq);
+		kfree(list);
+		break;
+	}
+    } else{
+	printk("SETPROCESSBUDGET: Not starting the RT task\n");
     }
 
     printk("User RT Prio for task %d is %d\n",pid,curr->rt_priority);
@@ -179,21 +196,21 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
     //Unlocking spin lock
     write_unlock(&tasklist_lock);
 
-    printk("leaving the task_list lock \n");
-
     //Setting the frequency only for SYSCLOCK
-    if(power_scheme == 1){
-	lastcpupolicy->max = 1300000;
-	lastcpupolicy->min = 51000;
-	temp_freq = cpufreq_get(0);
-	printk("Current cpu freq before setting %d \n",temp_freq);
-	if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){
-	    printk("Error :Processor frequency wasn't set\n"); 
+    if(is_bin_packing_set == 0){
+	if(power_scheme == 1){
+	    lastcpupolicy->max = 1300000;
+	    lastcpupolicy->min = 51000;
+	    temp_freq = cpufreq_get(0);
+	    printk("Current cpu freq before setting %d \n",temp_freq);
+	    if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){
+		printk("Error :Processor frequency wasn't set\n"); 
+	    }
+	    temp_freq = cpufreq_get(0);
+	    printk("Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min);
 	}
-	temp_freq = cpufreq_get(0);
-	printk("Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min);
     }
 
-    printk("Returning from setProcessBudget \n");
+    printk("Returning from setProcessBudget\n");
     return 0;
 }

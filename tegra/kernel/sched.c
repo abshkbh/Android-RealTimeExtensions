@@ -188,7 +188,10 @@ static enum hrtimer_restart sched_rt_period_timer(struct hrtimer *timer)
 }
 
 //Making the size of periodic tasks to 0
-static int periodic_tasks_size = 0;
+
+int periodic_tasks_size = 0;
+EXPORT_SYMBOL_GPL(periodic_tasks_size);
+
 struct list_head periodic_task_head;
 EXPORT_SYMBOL_GPL(periodic_task_head);
 
@@ -196,6 +199,21 @@ EXPORT_SYMBOL_GPL(periodic_task_head);
 //tasks
 struct list_head per_cpu_list[MAX_CPU];
 EXPORT_SYMBOL_GPL(per_cpu_list);
+
+//Gives the value of the bin packing scheme
+// 0 --> FFD
+// 1 --> NFD
+// 2 --> BFD
+// 3 --> WFD
+int bin_packing_scheme = -1;
+EXPORT_SYMBOL_GPL(bin_packing_scheme);
+
+//Global flag which says whether the bin packing is set or not
+// 0 --> bin packing is not set implies normal unicore scheduling
+// 1 --> bin packing is set implies multi-core scheduling
+int is_bin_packing_set = 0;
+EXPORT_SYMBOL_GPL(is_bin_packing_set);
+
 //Number of periodic tasks present on core in CPU
 int per_cpu_list_size[MAX_CPU];
 EXPORT_SYMBOL_GPL(per_cpu_list_size);
@@ -203,7 +221,7 @@ EXPORT_SYMBOL_GPL(per_cpu_list_size);
 long util_bound[11] = {1000, 828, 779, 757, 743, 735, 727, 724, 720, 718, 693};
 
 //All CPU's are fully free in the beginning
-unsigned long long cpu_util[MAX_CPU] = {1000 , 1000 , 1000 , 1000};
+long cpu_util[MAX_CPU] = {1000 , 1000 , 1000 , 1000};
 EXPORT_SYMBOL_GPL(cpu_util);
 
 int current_bins = 1;
@@ -218,8 +236,7 @@ int bin_packing(int scheme);
 long convert_to_usecs(struct timespec time);
 int check_admission_per_cpu(unsigned long budget, unsigned long period,int cpu);
 int __check_admission(struct task_ct_struct list[], int size);
-
-
+void clear_cpu_lists( void );
 
 
 //converts the time to usec
@@ -227,11 +244,30 @@ long convert_to_usecs(struct timespec time){
     return time.tv_sec*1000000 + time.tv_nsec/1000;
 }
 
+//Clears all the cpu lists when the bin packing fails
+void clear_cpu_lists( void ){
+    int i;
+    struct list_head * temp;
+    struct list_head * temp2;
+    for(i = 0; i < MAX_CPU; i++){
+	if(per_cpu_list_size[i] > 0){
+	    //Deleting all the tasks from the list
+	    printk("CLEAR_CPU_LISTS: Deleting tasks from cpu %d\n", i);
+	    list_for_each_safe(temp, temp2, &(per_cpu_list[i])){
+		printk("Deleting task\n");
+		list_del(temp);		
+	    }
+	}
 
+	per_cpu_list_size[i] = 0;
+	cpu_util[i] = 1000;
 
+    }
+}
+EXPORT_SYMBOL_GPL(clear_cpu_lists);
 
 //Checks whether the new RT task can be admitted to the system or not
-int check_admission_per_cpu(unsigned long budget, unsigned long period,int cpu){
+int check_admission_per_cpu(unsigned long budget, unsigned long period, int cpu){
 
     long temp_budget, temp_period;
     char flag = 0;
@@ -245,7 +281,8 @@ int check_admission_per_cpu(unsigned long budget, unsigned long period,int cpu){
     long util = 0;
     int count = 0;
 
-    printk("In check admission %d\n", periodic_tasks_size);
+    printk("In check admission for cpu %d\n", cpu);
+    printk("C = %lu us, T = %lu us\n", budget, period);
 
     //Checking admission of the first task
     if(size == 0){
@@ -258,7 +295,7 @@ int check_admission_per_cpu(unsigned long budget, unsigned long period,int cpu){
     }
 
     //Creating a CT array with the new task at the appropriate position
-    list_for_each(temp, &per_cpu_list[cpu]){
+    list_for_each(temp, &(per_cpu_list[cpu])){
 	curr = container_of(temp, struct task_struct, per_cpu_task);
 	temp_budget = convert_to_usecs(curr->budget_time);
 	temp_period = convert_to_usecs(curr->time_period);
@@ -278,6 +315,11 @@ int check_admission_per_cpu(unsigned long budget, unsigned long period,int cpu){
     if(flag == 0){	
 	list[count].budget = budget;
 	list[count].period = period;
+    }
+    
+    printk("check_admission per cpu: List sorted as per period:\n");
+    for(count = 0; count < size+1; count++){
+	printk("C: %ld us, T: %ld us\n",list[count].budget, list[count].period);
     }
 
     return __check_admission(list, size+1);
@@ -307,13 +349,16 @@ void my_swap(struct task_ct_struct *a, struct task_ct_struct *b){
 } 
 
 
-
+/*
+ * Sorts all the tasks in the system in decreasing order of util.
+ **/
 void sort_periodic_tasklist(struct task_ct_struct *list) {
     struct list_head * temp;
     struct task_struct * curr;
     int count = 0;
     unsigned long temp_budget = 0;
     unsigned long temp_period = 0;
+    unsigned long long temp2;
 
     printk("In sort periodic list %d\n", periodic_tasks_size);
 
@@ -324,7 +369,9 @@ void sort_periodic_tasklist(struct task_ct_struct *list) {
 	temp_period = convert_to_usecs(curr->time_period);
 	list[count].budget = temp_budget;
 	list[count].period = temp_period;
-	list[count].util = ((unsigned long long)temp_budget * SCALE_UP_FACTOR) / temp_period;
+	temp2 = (unsigned long long)temp_budget * SCALE_UP_FACTOR;
+	__div64_32(&temp2, temp_period);
+	list[count].util = temp2;
 	list[count].task = curr;
 	count++;
     }
@@ -332,7 +379,7 @@ void sort_periodic_tasklist(struct task_ct_struct *list) {
     bubble_sort(list,periodic_tasks_size);
     printk("Sorted list is :\n");
     for(count = 0; count < periodic_tasks_size ; count++){
-	printk("Budget: %lu, Period : %lu\n",list[count].budget, list[count].period);
+	printk("C: %lu us, T: %lu us\n",list[count].budget, list[count].period);
     }
 
 }
@@ -345,13 +392,91 @@ void bubble_sort(struct task_ct_struct *start, int total_tasks){
 	for (j = 0; j < total_tasks - i; j++) {
 	    if(start[j+1].util > start[j].util) {
 		my_swap(&start[j], &start[j+1]);
-		my_swap((start + j), (start + j + 1));
 		flag = 1;
 	    }
 	}
     } 
 }
 
+
+//Adds a new per cpu task to the link list
+void add_task_to_cpu(struct list_head * new, int cpu){
+    struct list_head * temp;
+    struct task_struct * curr;
+    struct task_struct * new_task;
+
+    //When there are no tasks in the system
+    if(per_cpu_list_size[cpu] == 0){
+	printk("Initializing the per_cpu_list for cpu %d\n", cpu);
+	INIT_LIST_HEAD(&(per_cpu_list[cpu]));
+    }
+
+    new_task = container_of(new, struct task_struct, per_cpu_task);
+
+    //Need to verify this
+    temp = &(per_cpu_list[cpu]);
+
+    //Sort and then add at correct position
+    per_cpu_list_size[cpu]++;
+    list_for_each(temp, &per_cpu_list[cpu]){
+	curr = container_of(temp, struct task_struct, per_cpu_task);
+	if(timespec_compare(&(curr->time_period), &(new_task->time_period)) > 0){
+	    printk("Insertion position found\n");
+	    break;
+	}
+    }
+    list_add_tail(new, temp);
+
+}
+
+
+int get_util_bin(long * bins, int nth_highest, int current_bins) {
+
+    long sorted_bins[4];
+    int i = 0;
+    int j = 0;
+    long temp;
+    int flag = 1;
+    long nth_util = 0;
+
+    //Putting bins in temp array
+    for ( i = 0 ; i < current_bins ; i++) {
+	sorted_bins[i] = bins[i];
+    }
+    //Sorting temp array
+    if (current_bins != 1) {
+	for ( i = 1; i <= current_bins && flag; i++) {
+	    flag = 0;
+	    for (j = 0; j < current_bins - i; j++) {
+		if(sorted_bins[j+1]  < sorted_bins[j]) {
+		    temp = sorted_bins[j];
+		    sorted_bins[j] = sorted_bins[j+1];
+		    sorted_bins[j+1] = temp;
+		    flag = 1;
+		}
+	    }
+	}
+    }
+
+    printk("For current bins = %d\n",current_bins);
+    printk("Sorted bins are : \n");
+
+    for(i = 0 ; i < current_bins ; i++) {
+	printk("%ld ",sorted_bins[i]);
+    }
+    printk("\n");
+    //Getting value of nth_util
+    nth_util =  sorted_bins[nth_highest];
+
+    //Finding indice of nth_util and returning it
+    for ( i = 0 ; i < current_bins ; i++) {
+	if (bins[i] == nth_util) {
+	    return i;
+	}
+    }
+    return -1;
+
+}
 
 //This functions packs our current periodic tasks 
 //into bins. On success it sets affinity and returns number of
@@ -363,8 +488,8 @@ int bin_packing(int scheme) {
     unsigned long long utilization;
     int i;
     int j;
-    int start_bin = 1;
     int best_fit_bin = 0;
+    int prev_bin = 0;
     int binfound = 0;
     struct task_ct_struct list[periodic_tasks_size];
 
@@ -387,6 +512,7 @@ int bin_packing(int scheme) {
 		    if(check_admission_per_cpu(list[i].budget,list[i].period,j) == 1) {
 			//Set affinity
 			printk("Task with C = %ld is on bin %d\n",list[i].budget,j + 1);
+			add_task_to_cpu(&((list[i].task)->per_cpu_task), j);
 			cpu_util[j] -= utilization;
 			binfound = 1;
 			break;
@@ -403,11 +529,111 @@ int bin_packing(int scheme) {
 
 	}
 
+    } else if(scheme == 1){
+
+	for(i = 0; i < periodic_tasks_size; i++) {
+	    utilization = list[i].util;
+	    binfound = 0;
+	    //trying to fit the current task in all bins from current task
+	    for(j = 0 ; j < current_bins ; j++){	
+		if(check_admission_per_cpu(list[i].budget,list[i].period,prev_bin) == 1){
+		    //Set Affinity
+		    printk("Task with C = %ld is on bin %d\n",list[i].budget, prev_bin+1);
+		    cpu_util[prev_bin] -= utilization;
+		    add_task_to_cpu(&((list[i].task)->per_cpu_task), prev_bin);
+		    binfound = 1;
+		    break;
+		} else{
+		    prev_bin = (prev_bin+1)%current_bins;
+		}
+	    }
+	    if((!binfound) && (current_bins < max_bins)){
+		//Set Affinity
+		current_bins++;
+		printk("Task with C = %ld is on bin %d\n",list[i].budget, current_bins);
+		cpu_util[current_bins-1] -= utilization;
+		add_task_to_cpu(&((list[i].task)->per_cpu_task), current_bins-1);
+		prev_bin = current_bins-1;
+	    }
+	    if(current_bins > max_bins){
+		return 0;
+	    }
+	}
+    } else if(scheme == 2){
+
+	for(i = 0; i < periodic_tasks_size; i++) {
+	    utilization = list[i].util;
+	    j = 0;
+	    binfound = 0;
+
+	    while (!binfound) {
+
+		//Iterate through current bins find jth Highest Util
+		best_fit_bin = get_util_bin(cpu_util, j, current_bins); 
+
+		//Check for admission control
+		if(check_admission_per_cpu(list[i].budget,list[i].period,best_fit_bin) == 1) {
+		    printk("Best Fit Bin is %d\n", best_fit_bin);
+		    //Set affinity
+		    printk("Task with C = %ld is on bin %d\n",list[i].budget,(best_fit_bin + 1));
+		    add_task_to_cpu(&((list[i].task)->per_cpu_task), best_fit_bin);
+		    cpu_util[best_fit_bin] -= utilization;
+		    binfound = 1;
+		}
+		else {
+		    j++;
+		    if ( j == current_bins) {
+			current_bins++;
+		    }
+		    //No bins left
+		    if (current_bins > max_bins) {
+			return 0;
+		    }
+		}
+	    }
+	}
+    } else if(scheme == 3){
+
+	current_bins = 4; 
+	for(i = 0 ; i < periodic_tasks_size ; i++) {
+	    utilization = list[i].util;
+
+	    j = 0;
+	    binfound = 0;
+
+	    while (!binfound) {
+
+		//Iterate through current bins find current_bins -1 -jth Highest Util
+		best_fit_bin = get_util_bin(cpu_util ,(current_bins - 1) -j , current_bins); 
+
+		//Check for admission control
+		if(check_admission_per_cpu(list[i].budget,list[i].period, best_fit_bin) == 1) {
+		    //Set affinity
+		    printk("Best Fit Bin is %d\n", best_fit_bin);
+		    printk("Task with C = %ld is on bin %d\n",list[i].budget,(best_fit_bin + 1));
+		    cpu_util[best_fit_bin] -= utilization;
+		    add_task_to_cpu(&((list[i].task)->per_cpu_task), best_fit_bin);
+		    binfound = 1;
+		}
+		else {
+		    j++;
+		    if ( j == current_bins) {
+			current_bins++;
+		    }
+		    //No bins left
+		    if (current_bins > max_bins) {
+			return 0;
+		    }
+		}
+	    }
+
+	}
     }
 
     printk("Total bins %d\n",current_bins);
     return current_bins;
 }
+EXPORT_SYMBOL_GPL(bin_packing);
 
 //Callback function for timer restart
 enum hrtimer_restart budget_timer_callback(struct hrtimer * timer) {
@@ -543,7 +769,7 @@ int rt_test (struct task_ct_struct list[], int pos){
     for(i = 0; i <= pos; i++){
 	prev_a += list[i].budget;
     }
-    printk("C0 value is %ld \n",prev_a);
+    //printk("C0 value is %ld \n",prev_a);
 
     while( prev_a <= list[pos].period ){  
 	curr_a = list[pos].budget;
@@ -551,7 +777,7 @@ int rt_test (struct task_ct_struct list[], int pos){
 	    curr_a += ceiling(prev_a,list[i].period) * list[i].budget;	    
 	}
 
-	printk("C value is %ld \n",curr_a);
+	//printk("C value is %ld \n",curr_a);
 	if( prev_a == curr_a ){  
 	    return 1;
 	}
@@ -594,7 +820,7 @@ int check_admission(struct timespec budget, struct timespec period){
     long util = 0;
     int count = 0;
 
-    printk("In check admission %d\n", periodic_tasks_size);
+    //printk("In check admission %d\n", periodic_tasks_size);
 
     //Checking admission of the first task
     if(periodic_tasks_size == 0){
@@ -629,8 +855,9 @@ int check_admission(struct timespec budget, struct timespec period){
 	list[count].period = period_us;
     }
 
+    printk("check_admission: List sorted as per period:\n");
     for(count = 0; count < periodic_tasks_size+1; count++){
-	printk("Budget: %ld, Period : %ld\n",list[count].budget, list[count].period);
+	printk("C: %ld us, T: %ld us\n",list[count].budget, list[count].period);
     }
 
     return __check_admission(list, periodic_tasks_size+1);
@@ -667,10 +894,6 @@ void add_periodic_task(struct list_head * new){
     }
     list_add_tail(new, temp);
 
-    list_for_each(temp, &periodic_task_head){
-	curr = container_of(temp, struct task_struct, periodic_task);
-	printk("Budget : %ld, Period : %ld\n", (curr->budget_time).tv_sec, (curr->time_period).tv_sec);
-    }
 
 }
 EXPORT_SYMBOL_GPL(add_periodic_task);
@@ -1177,12 +1400,12 @@ int apply_pmclock(unsigned long max_frequency){
 void set_pmclock_freq(int cpu_no , unsigned long frequency){
 
     struct cpufreq_policy * lastcpupolicy = cpufreq_cpu_get(cpu_no);
+    unsigned int temp_freq = 0;
+    int ret_val;
 
     if(lastcpupolicy == NULL){
 	printk("ERROR : policy obtained is NULL\n");
     }
-    unsigned int temp_freq = 0;
-    int ret_val;
 
     temp_freq = cpufreq_get(cpu_no);
     printk("DEBUG PM:Current cpu freq before setting %d new frequency is %lu \n",temp_freq, frequency);
@@ -5455,7 +5678,7 @@ need_resched:
 		temp = timespec_sub(leader->budget_time , leader->compute_time);
 		time_remaining = timespec_to_ktime(temp);
 
-		printk("CPU %d RemT for %d is %ld s and %ld ns \n", smp_processor_id(),next->pid, temp.tv_sec, temp.tv_nsec);
+		//printk("CPU %d RemT for %d is %ld s and %ld ns \n", smp_processor_id(),next->pid, temp.tv_sec, temp.tv_nsec);
 
 		//If budget is smaller than a threshold than make ut sleep here
 		if ((temp.tv_sec == 0) && (temp.tv_nsec <= 10000)) {

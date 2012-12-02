@@ -6,8 +6,12 @@
 #include <linux/time.h>
 #include <asm/uaccess.h>
 
-asmlinkage int sys_setGlobalSysClock( void ) {
+extern int is_bin_packing_set;
 
-    printk("********* CALLING SETGLOBALSYSCLOCK*********\n");
+asmlinkage int sys_cancelBinPacking( void ) {
+
+    is_bin_packing_set = 0;
     return 0;
 }
+
+

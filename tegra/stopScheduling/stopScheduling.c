@@ -6,20 +6,31 @@
 #include <linux/time.h>
 #include <asm/uaccess.h>
 
-extern int is_bin_packing_set ;
+extern int is_bin_packing_set;
+extern int periodic_tasks_size;
+extern struct list_head periodic_task_head;
 
-void clear_cpu_list(void);
+void clear_cpu_lists(void);
 
-asmlinkage int sys_stopScheduling() {
+asmlinkage int sys_stopScheduling( void ) {
 
-    printk("******STOPING SCHEDULING*******\n",value);
-    struct list_head temp;
+    struct list_head * temp;
     struct task_struct * curr;
     struct task_struct * temp2;
+    
+    printk("******STOPING SCHEDULING*******\n");
+   
+    is_bin_packing_set = 1;
+
+    if(periodic_tasks_size == 0){
+	printk("No RT Tasks to stop\n");
+	return 0;
+    }
 
     //This loop cancels the timers for all the rt tasks and resets the
     // compute time to zero . It also wakes up all the threads and now
     // all the tasks run as non-rt tasks .
+    write_lock(&tasklist_lock);
     list_for_each(temp, &periodic_task_head){
 	curr = container_of(temp, struct task_struct, periodic_task);
 
@@ -45,13 +56,13 @@ asmlinkage int sys_stopScheduling() {
 	    }
 	}while_each_thread(curr,temp2);
 
-
     }
-    
-    //Clearing all the cpu the list
-    clear_cpu_list();
 
-    is_bin_packing_set = 1;
-    
+    //Clearing all the cpu the list
+    clear_cpu_lists();
+    write_unlock(&tasklist_lock);
+
+    printk("******EXITING STOP*******\n");
+
     return 0;
 }
