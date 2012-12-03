@@ -929,17 +929,23 @@ NORET_TYPE void do_exit(long code)
 		temp->is_budget_set = 0;
 	    }while_each_thread(tsk, temp);
 
-	    if (hrtimer_try_to_cancel(&(current->period_timer)) != 1) {
-		printk("Exit : Period Timer for %d is either not active or not callback",current->pid); 
+	    printk("EXIT: Trying to cancel period timer\n");
+
+	    if (hrtimer_cancel(&(current->period_timer)) != 1) {
+		printk("Exit : Period Timer for %d is either not active or in callback\n",current->pid); 
 	    }
+	    printk("EXIT: Trying to cancel budget timer\n");
+
 	    if (hrtimer_try_to_cancel(&(current->budget_timer)) != 1) {
-		printk("Exit : Budget Timer for %d is either not active or not callback",current->pid); 
+		printk("Exit : Budget Timer for %d is either not active or in callback\n",current->pid); 
 	    }
 
 	    del_periodic_task(&(tsk->periodic_task));
+	    printk("EXIT: Task deleted from global RT List\n");
 
 	    if(is_bin_packing_set == 1){
 		del_task_cpu(&(tsk->per_cpu_task), tsk->cpu_no);
+		printk("EXIT: Task deleted, changing the RT Prio\n");
 		set_rt_priorities_per_cpu(tsk->cpu_no);
 	    }
 
@@ -975,7 +981,7 @@ NORET_TYPE void do_exit(long code)
 
 	write_unlock(&tasklist_lock);
 	//We need to reset the frequency only in the case of sysclock
-	if (tsk->pid == tsk->tgid && power_scheme == 1) {
+	if (tsk->pid == tsk->tgid && power_scheme == 1 && is_bin_packing_set == 0) {
 	    temp_freq = cpufreq_get(0);
 	    printk("Current cpu freq before setting %d \n",temp_freq);
 	    if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){

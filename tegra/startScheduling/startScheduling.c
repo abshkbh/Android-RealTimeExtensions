@@ -29,8 +29,6 @@ asmlinkage int sys_startScheduling( void ) {
 	if(per_cpu_list_size[i] > 0){
 	    list_for_each(temp, &(per_cpu_list[i])){
 		curr = container_of(temp, struct task_struct, per_cpu_task);
-		
-		set_rt_priorities_per_cpu(i);
 
 		temp2 = curr;
 
@@ -44,6 +42,7 @@ asmlinkage int sys_startScheduling( void ) {
 		    printk("Could not restart period timer for task %d\n", curr->pid);
 		}
 	    }
+	    set_rt_priorities_per_cpu(i);
 	}
     }
     write_unlock(&tasklist_lock);

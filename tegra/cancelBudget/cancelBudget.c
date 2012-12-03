@@ -108,27 +108,28 @@ asmlinkage int sys_cancelBudget(pid_t pid) {
 	}
     }
 
-    if(power_scheme == 1){
-	//Getting the sys clock frequency
-	make_task_ct_struct(&list);
-	sysclock_freq = sysclock(max_frequency, list);
-	printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
-    } else if(power_scheme == 2){
-	//Getting the sys clock frequency
-	make_task_ct_struct(&list);
-	sysclock_freq = sysclock(max_frequency, list);
-	printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
-	pmclock(list);
-	kfree(list);
-    }
+    if(is_bin_packing_set == 0 ){
+	if(power_scheme == 1){
+	    //Getting the sys clock frequency
+	    make_task_ct_struct(&list);
+	    sysclock_freq = sysclock(max_frequency, list);
+	    printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
+	} else if(power_scheme == 2){
+	    //Getting the sys clock frequency
+	    make_task_ct_struct(&list);
+	    sysclock_freq = sysclock(max_frequency, list);
+	    printk("Sysclock frequency is %lu kHz\n", sysclock_freq);
+	    pmclock(list);
+	    kfree(list);
+	}
 
-    if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
-	printk("Failed to set the cpu feq after sysclock calculations \n");
+	if((ret_freq = apply_sysclock(sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
+	    printk("Failed to set the cpu feq after sysclock calculations \n");
+	}
     }
-
     write_unlock(&tasklist_lock);
 
-    if(power_scheme == 1){
+    if(power_scheme == 1 && is_bin_packing_set == 0){
 	temp_freq = cpufreq_get(0);
 	printk("Current cpu freq before setting %d \n",temp_freq);
 	if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){

@@ -713,20 +713,25 @@ enum hrtimer_restart budget_timer_callback(struct hrtimer * timer) {
     struct task_struct *temp;
     struct task_struct * curr = container_of(timer, struct task_struct, budget_timer);
 
-    spin_lock_irqsave(&(curr->task_spin_lock),flags);
+    if(curr != NULL){
 
-    temp = curr;
-    do {
-	//Since the budget has expired we add the task to its own wait queue
-	if(curr->state != TASK_UNINTERRUPTIBLE) {
-	    set_task_state(curr, TASK_UNINTERRUPTIBLE);
-	    set_tsk_need_resched(curr);
-	}
-    }while_each_thread(curr,temp);
+	spin_lock_irqsave(&(curr->task_spin_lock),flags);
 
-    spin_unlock_irqrestore(&(curr->task_spin_lock),flags);
+	temp = curr;
+	do {
+	    //Since the budget has expired we add the task to its own wait queue
+	    if(curr->state != TASK_UNINTERRUPTIBLE) {
+		set_task_state(curr, TASK_UNINTERRUPTIBLE);
+		set_tsk_need_resched(curr);
+	    }
+	}while_each_thread(curr,temp);
+	printk("In budget timer callback %d\n", curr->pid);
 
-    printk("In budget timer callback \n");
+	spin_unlock_irqrestore(&(curr->task_spin_lock),flags);
+    } else{
+	printk("WTF curr is Null\n");
+    }
+
     return HRTIMER_NORESTART;
 
 } 
@@ -743,29 +748,35 @@ enum hrtimer_restart period_timer_callback(struct hrtimer * timer) {
     //Timer callback functionality for periodic timer
     struct task_struct * curr = container_of(timer, struct task_struct, period_timer);
 
-    spin_lock_irqsave(&(curr->task_spin_lock),flags);
+    if(curr != NULL){
+	printk("Entered Time Period cback %d\n", curr->pid);
 
-    //setting the current time to 0 basically replenishing the budget after the period
-    (curr->compute_time).tv_sec = 0;
-    (curr->compute_time).tv_nsec = 0;
+	spin_lock_irqsave(&(curr->task_spin_lock),flags);
 
-    //Restarting period and setting the timer to the period
-    current_time = hrtimer_cb_get_time(&(curr->period_timer));
-    period = timespec_to_ktime(curr->time_period);
-    overrun = hrtimer_forward(timer, current_time, period);
-    if (overrun < 0) {
-	printk("Error restarting T\n");
+	//setting the current time to 0 basically replenishing the budget after the period
+	(curr->compute_time).tv_sec = 0;
+	(curr->compute_time).tv_nsec = 0;
+
+	//Restarting period and setting the timer to the period
+	current_time = hrtimer_cb_get_time(&(curr->period_timer));
+	period = timespec_to_ktime(curr->time_period);
+	overrun = hrtimer_forward(timer, current_time, period);
+	if (overrun < 0) {
+	    printk("Error restarting T\n");
+	}
+
+	temp = curr;
+	do {
+	    //waking up the task
+	    wake_up_process(temp);
+	}while_each_thread(curr,temp);
+
+	spin_unlock_irqrestore(&(curr->task_spin_lock),flags);
+
+	printk("Time Period cback %d\n", curr->pid);
+    } else{
+	printk("WTF curr is Null\n");
     }
-
-    temp = curr;
-    do {
-	//waking up the task
-	wake_up_process(temp);
-    }while_each_thread(curr,temp);
-
-    spin_unlock_irqrestore(&(curr->task_spin_lock),flags);
-
-    printk("Time Period cback %d\n", curr->pid);
     return HRTIMER_RESTART;
 } 
 EXPORT_SYMBOL_GPL(period_timer_callback);
@@ -1031,6 +1042,7 @@ int set_rt_priorities_per_cpu(int cpu){
     //When there are no tasks in the system
     //there is no one to set priority on
     if(per_cpu_list_size[cpu] <= 0){
+	printk("Set rt prio per cpu failed\n");
 	return -1;
     }
 
