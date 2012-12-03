@@ -15,7 +15,7 @@ extern int per_cpu_list_size[];
 void clear_cpu_list(void);
 int set_rt_priorities_per_cpu(int cpu);
 void make_task_ct_struct_per_cpu(struct task_ct_struct ** list,int cpu);
-long sysclock(unsigned long max_frequency, struct task_ct_struct * list);
+long sysclock_per_cpu(unsigned long max_frequency, struct task_ct_struct * list, int size);
 unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency);
 
 asmlinkage int sys_startScheduling( void ) {
@@ -42,7 +42,7 @@ asmlinkage int sys_startScheduling( void ) {
 	//across all cores . Then we set that across all tasks 
 	for(i = 0 ; i < 4 ; i++){
 	    if(per_cpu_list_size[i] > 0) {
-                 
+
 		//Setting rt-priorites and budget flag per cpu
 		list_for_each(temp, &(per_cpu_list[i])){
 		    curr = container_of(temp, struct task_struct, per_cpu_task);
@@ -53,17 +53,18 @@ asmlinkage int sys_startScheduling( void ) {
 		    }while_each_thread(curr,temp2);
 
 		}
-		
+
 		//set_rt_priorities_per_cpu(i);
-                //Getting max sysclock freq
+		//Getting max sysclock freq
 		make_task_ct_struct_per_cpu(&list,i);
-		sysclock_freq = sysclock(max_frequency, list);
+		sysclock_freq = sysclock_per_cpu(max_frequency, list, per_cpu_list_size[i]);
 		if (sysclock_freq > max_sysclock_freq) {
 		    max_sysclock_freq = sysclock_freq;
 		}
 		kfree(list);
 	    }
 	}
+
 	printk("Global Sysclock freq = %lu\n",max_sysclock_freq);
 	if((ret_freq = apply_sysclock(max_sysclock_freq, (lastcpupolicy->cpuinfo).max_freq)) < 0){
 	    printk("Failed to set the cpu feq after sysclock calculations \n");
@@ -76,8 +77,11 @@ asmlinkage int sys_startScheduling( void ) {
 	lastcpupolicy->min = 51000;
 	temp_freq = cpufreq_get(0);
 	printk("Global Sysclock : Current cpu freq before setting %d \n",temp_freq);
-	if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){
-	    printk("Error :Processor frequency wasn't set\n"); 
+	for(i = 0; i < 4; i++){
+	    lastcpupolicy = cpufreq_cpu_get(i);
+	    if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){
+		printk("Error :Processor frequency wasn't set\n"); 
+	    }
 	}
 	temp_freq = cpufreq_get(0);
 	printk("Global Sysclock : Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min);

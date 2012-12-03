@@ -545,7 +545,6 @@ int bin_packing(int scheme) {
 			    printk("ERROR : COULD NOT SET AFFINITY \n");
 			}
 
-
     			add_task_to_cpu(&((list[i].task)->per_cpu_task), j);
 			cpu_util[j] -= utilization;
 			binfound = 1;
@@ -1300,7 +1299,7 @@ void make_task_ct_struct_per_cpu(struct task_ct_struct ** list,int cpu){
     struct task_struct * curr;
     int i = 0;
     
-    *list = (struct task_ct_struct *) kmalloc(periodic_tasks_size * sizeof(struct task_ct_struct), GFP_KERNEL);
+    *list = (struct task_ct_struct *) kmalloc(per_cpu_list_size[cpu] * sizeof(struct task_ct_struct), GFP_KERNEL);
 	
 	list_for_each(temp, &(per_cpu_list[cpu])){
 	    curr = container_of(temp, struct task_struct, per_cpu_task);
@@ -1312,6 +1311,111 @@ void make_task_ct_struct_per_cpu(struct task_ct_struct ** list,int cpu){
 }
 EXPORT_SYMBOL_GPL(make_task_ct_struct_per_cpu);
 
+
+//Function for the actual sysclock algorithm
+//It has to be called when the task list is locked
+unsigned long sysclock_per_cpu(unsigned long max_frequency, struct task_ct_struct * list, int size) {
+
+    //struct task_struct * curr;
+    //struct list_head * temp;
+    //struct task_ct_struct list[periodic_tasks_size];
+
+    int in_bzp = 1 ; //computing busy period
+    unsigned long C; //time trace
+    unsigned long Ctemp = 0; //time trace
+    unsigned long slack = 0; //slack time
+    unsigned long w  = 0; //workload
+    unsigned long tW = 0; //beginning next busy period
+    unsigned long alpha = 2 * SCALE_UP_FACTOR ; //energy minimizing clock frequency normalized to fmax
+    unsigned long delta = 0;
+    unsigned long T = 0;
+    int i = 0;
+    int j = 0;
+    unsigned long temp_slack  = 0;
+    unsigned long idle_duration = 0;
+    unsigned long temp_idle_duration = 0;
+    int iteration = 0;
+    unsigned long max_alpha = 0;
+
+    //Getting all the tasks
+    //When there are no RT tasks the system should run at the min frequency
+    if(size <= 0){
+	return 0;
+    }
+
+    for(i = 0 ; i < size ; i++) {
+
+	//Initializing variables for compute alpha
+	C = list[i].budget;
+	T = list[i].period;
+	Ctemp = 0; //time trace
+	slack = 0; //slack time
+	w  = 0; //workload
+	tW = 0; //beginning next busy period
+	alpha = 2 * SCALE_UP_FACTOR ; //energy minimizing clock frequency normalized to fmax
+	delta = 0;
+	temp_slack  = 0;
+	idle_duration = 0;
+	temp_idle_duration = 0;
+	iteration = 0;
+	//Initializion ends
+
+	//Compute Alpha begins
+	while (C < T) {
+
+	    if(in_bzp) {
+		delta = T - C;
+		while((C < T) && (delta > 0)) {
+		    temp_slack = 0;
+		    for(j = 0 ; j <=i ; j++){
+			temp_slack += ((C / list[j].period) + 1)*(list[j].budget);
+		    }
+		    Ctemp = slack + temp_slack;
+		    delta = Ctemp - C;
+		    C = Ctemp;
+		}
+		in_bzp = 0;
+		printk("Iteration = %d C = %ld slack = %ld\n",iteration,C,slack);
+		iteration++;
+	    }
+	    else {
+
+		idle_duration = 234567; //dummy high value 
+		for(j = 0 ; j <=i ; j++){
+		    temp_idle_duration = (ceiling(C,list[j].period) * list[j].period) - C;
+		    if (temp_idle_duration < idle_duration) {
+			idle_duration = temp_idle_duration;
+		    }
+		}
+
+		if ((T - C) < idle_duration){
+		    idle_duration = T - C;
+		}
+
+		C += idle_duration;
+		slack += idle_duration;
+		tW = C;
+		w = tW - slack;
+		alpha = ( alpha < ((w * SCALE_UP_FACTOR) / tW)) ? alpha : ((w * SCALE_UP_FACTOR) / tW);
+		printk("Iteration = %d C = %ld slack = %ld\n",iteration,C,slack);
+		iteration++;
+		in_bzp = 1;
+	    }
+
+	}
+	//Setting the min sysclock frequency for this task 
+	(list[i].task)->alpha = alpha;
+
+	printk("For task %d alpha = %ld\n", i, alpha);
+	if (alpha > max_alpha) {
+	    max_alpha = alpha;
+	}
+    }
+
+    printk("Max alpha = %ld\n",max_alpha);
+    return (max_frequency * max_alpha);  //Return in kHz
+}
+EXPORT_SYMBOL_GPL(sysclock_per_cpu);
 
 
 //Function for the actual sysclock algorithm
