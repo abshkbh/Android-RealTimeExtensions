@@ -189,6 +189,8 @@ static enum hrtimer_restart sched_rt_period_timer(struct hrtimer *timer)
 
 //Making the size of periodic tasks to 0
 
+int is_freq_lock_taken = 0;
+
 int periodic_tasks_size = 0;
 EXPORT_SYMBOL_GPL(periodic_tasks_size);
 
@@ -1263,7 +1265,8 @@ void pmclock(struct task_ct_struct * list){
 
 	//Getting the frequency from the table for cpu 0 and setting it into the task struct
 	//TODO get the core of the task after bin packing and then get the max
-	(list[i].task)->pmclock_freq = get_table_frequency(0 , pm_freq[i]);
+	(list[i].task)->pmclock_freq = get_table_frequency(0 , pm_freq[i]* 1000);
+
     }
 
     for(i = 0; i < periodic_tasks_size; i++){
@@ -1661,10 +1664,6 @@ unsigned int apply_sysclock_per_cpu(unsigned long frequency, unsigned long max_f
 
 
 
-
-
-
-
 //It applies the sysclock frequency on the cpu as well as 
 //changes the budget for all the RT tasks.
 int apply_pmclock(unsigned long max_frequency){
@@ -1738,23 +1737,20 @@ int apply_pmclock(unsigned long max_frequency){
 void set_pmclock_freq(int cpu_no , unsigned long frequency){
 
     struct cpufreq_policy * lastcpupolicy = cpufreq_cpu_get(cpu_no);
-    unsigned int temp_freq = 0;
+    unsigned int temp_freq = 0;    
     int ret_val;
 
-    if(lastcpupolicy == NULL){
-	printk("ERROR : policy obtained is NULL\n");
+    if(lastcpupolicy == NULL || frequency == 0 ){
+	printk("ERROR : policy is null or freq is 0\n");
+	return;
     }
 
-    temp_freq = cpufreq_get(cpu_no);
-    printk("DEBUG PM:Current cpu freq before setting %d new frequency is %lu \n",temp_freq, frequency);
+    //temp_freq = cpufreq_get(cpu_no);
+    //printk("DEBUG PM:Current cpu freq before setting %d new frequency is %lu\n",temp_freq, frequency);
 
-    if((ret_val = (lastcpupolicy->governor)->store_setspeed(lastcpupolicy, frequency)) < 0){
+    if((ret_val = __cpufreq_driver_target(lastcpupolicy,frequency,CPUFREQ_RELATION_L))<0){
 	printk("Error :Processor frequency wasn't set\n"); 
     }
-
-    /*if((ret_val = __cpufreq_driver_target(lastcpupolicy,frequency,CPUFREQ_RELATION_L))<0){
-      printk("Error :Processor frequency wasn't set\n"); 
-      }*/
     temp_freq = cpufreq_get(cpu_no);
     printk("DEBUG PM:Cpu freq after setting %d min freq is %d\n",temp_freq,lastcpupolicy->min);
 
@@ -4418,6 +4414,7 @@ static void __sched_fork(struct task_struct *p)
 
     //Setting the logging to false
     p->is_log_enabled = 0;
+    p->has_freq_lock = 0;
 
     //Initialzing spin lock : Assuming this function
     //sets it to false
@@ -5897,12 +5894,12 @@ static void __sched __schedule(void)
     unsigned long *switch_count;
     struct rq *rq;
     int cpu;
+    int flag = 0;
     struct timespec t1;   //temp variable
     struct timespec diff; //temp variable
     struct timespec temp; //temp variable
     ktime_t time_remaining; //temp variable
     unsigned long flagone;
-    unsigned int temp_freq; //to store current cpu freq for comparison
 
 need_resched:
     preempt_disable();
@@ -5956,7 +5953,6 @@ need_resched:
 	rq->nr_switches++;
 	rq->curr = next;
 	++*switch_count;
-
 
 
 	//Getting the current time in order to compute exec time of prev
@@ -6033,71 +6029,64 @@ need_resched:
 		    if(hrtimer_start(&(leader->budget_timer), time_remaining, HRTIMER_MODE_REL) == 1) {	
 			printk("Could not restart budget timer for task %d and leader %d",next->pid,leader->pid);
 		    }
+		    if(power_scheme == 2){
+			flag = 1;
+		    }
 		}
 
-		//Here if the budget is set and the power scheme is PM Clock 
-		//then if the frequency between prev and next task is different
-		//we need to set the new frequency
-		/*if(power_scheme == 2){
-
-		//Getting the current frequency 
-		temp_freq = cpufreq_get(0);
-		printk(" DEBUG :Prev frequency is %d\n" , temp_freq );
-
-		//Applying the PM clock frequency
-		set_pmclock_freq( 0 , next->pmclock_freq );
-
-		}*/
-	    }
-	    else if (next->state != TASK_UNINTERRUPTIBLE){
-		//Else if budget is smaller (which should ideally never happen)
-		//send signal to process to be killed
-		printk("Budget exceeded for %d\n",next->pid);
-		//Since the budget has expired we add the task to its own wait queue
-		iterator = leader;
-		do {
-		    set_task_state(next, TASK_UNINTERRUPTIBLE);
-		    set_tsk_need_resched(next);
-		}while_each_thread(leader,iterator);
-	    }
-
-	    spin_unlock_irqrestore(&(leader->task_spin_lock),flagone);
+	}
+	else if (next->state != TASK_UNINTERRUPTIBLE){
+	    //Else if budget is smaller (which should ideally never happen)
+	    //send signal to process to be killed
+	    printk("Budget exceeded for %d\n",next->pid);
+	    //Since the budget has expired we add the task to its own wait queue
+	    iterator = leader;
+	    do {
+		set_task_state(next, TASK_UNINTERRUPTIBLE);
+		set_tsk_need_resched(next);
+	    }while_each_thread(leader,iterator);
 	}
 
-	//Logs the timestamp of the system
-	if(next->is_log_enabled == 1){
-	    leader = next->group_leader;
-	    spin_lock_irqsave(&(leader->task_spin_lock),flagone);
-	    log_data_point(leader, leader->exec_time);
-	    spin_unlock_irqrestore(&(leader->task_spin_lock),flagone);
-	}
+	spin_unlock_irqrestore(&(leader->task_spin_lock),flagone);
+    }
 
-	context_switch(rq, prev, next); /* unlocks the rq */
-	/*
-	 * The context switch have flipped the stack from under us
-	 * and restored the local variables which were saved when
-	 * this task called schedule() in the past. prev == current
-	 * is still correct, but it can be moved to another cpu/rq.
-	 */
-	cpu = smp_processor_id();
-	rq = cpu_rq(cpu);
-    } else
-	raw_spin_unlock_irq(&rq->lock);
+    //Logs the timestamp of the system
+    if(next->is_log_enabled == 1){
+	leader = next->group_leader;
+	spin_lock_irqsave(&(leader->task_spin_lock),flagone);
+	log_data_point(leader, leader->exec_time);
+	spin_unlock_irqrestore(&(leader->task_spin_lock),flagone);
+    }
 
-    post_schedule(rq);
+    context_switch(rq, prev, next); /* unlocks the rq */
+    /*
+     * The context switch have flipped the stack from under us
+     * and restored the local variables which were saved when
+     * this task called schedule() in the past. prev == current
+     * is still correct, but it can be moved to another cpu/rq.
+     */
+    cpu = smp_processor_id();
+    rq = cpu_rq(cpu);
+} else
+raw_spin_unlock_irq(&rq->lock);
 
-    preempt_enable_no_resched();
-    if (need_resched())
-	goto need_resched;
+post_schedule(rq);
 
-    if(power_scheme == 2 && next->is_budget_set == 1 &&(timespec_compare(&(leader->budget_time) , &(leader->compute_time))> 0)){
+preempt_enable_no_resched();
+if (need_resched())
+    goto need_resched;
 
-	//Getting the current frequency 
-	temp_freq = cpufreq_get(0);
-	printk(" DEBUG :Prev frequency is %d\n" , temp_freq );
-
+    if(flag == 1){
 	//Applying the PM clock frequency
-	set_pmclock_freq( 0 , next->pmclock_freq );
+	if(is_freq_lock_taken == 0){
+	    is_freq_lock_taken = 1;
+	    //next->has_freq_lock = 1;
+	    barrier();
+	    if(next->state != TASK_UNINTERRUPTIBLE){
+		set_pmclock_freq( 0 , next->pmclock_freq);
+	    }
+	    is_freq_lock_taken = 0;
+	}
 
     }
 

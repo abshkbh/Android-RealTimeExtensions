@@ -1631,6 +1631,9 @@ struct task_struct {
 	/*Cpu on which the task is scheduled by the pin policy scheme*/
 	int cpu_no;
 
+	/* Checks whether the frequency lock is taken or not for PM Clock */
+	char has_freq_lock;
+
 };
 
 struct task_ct_struct{

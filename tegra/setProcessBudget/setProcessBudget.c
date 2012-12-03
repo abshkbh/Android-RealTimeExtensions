@@ -190,10 +190,10 @@ asmlinkage int sys_setProcessBudget(pid_t pid, unsigned long budget, struct time
 	printk("SETPROCESSBUDGET: Not starting the RT task\n");
     }
 
-    printk("User RT Prio for task %d is %d\n",pid,curr->rt_priority);
-
     //Unlocking spin lock
     write_unlock(&tasklist_lock);
+    
+    printk("User RT Prio for task %d is %d\n",pid,curr->rt_priority);
 
     //Setting the frequency only for SYSCLOCK
     if(is_bin_packing_set == 0){
