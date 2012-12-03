@@ -208,6 +208,13 @@ EXPORT_SYMBOL_GPL(per_cpu_list);
 int bin_packing_scheme = -1;
 EXPORT_SYMBOL_GPL(bin_packing_scheme);
 
+//Global sysclock Enabled or Not
+// 0 --> Global Sysclock disabled
+// 1 --> Global Sysclock enabled
+int global_sysclock = 0;
+EXPORT_SYMBOL_GPL(global_sysclock);
+
+
 //Global flag which says whether the bin packing is set or not
 // 0 --> bin packing is not set implies normal unicore scheduling
 // 1 --> bin packing is set implies multi-core scheduling
@@ -1255,6 +1262,7 @@ void pmclock(struct task_ct_struct * list){
 }
 EXPORT_SYMBOL_GPL(pmclock);
 
+//helper function for sysclock
 void make_task_ct_struct(struct task_ct_struct ** list){
 
     struct list_head * temp;
@@ -1271,6 +1279,28 @@ void make_task_ct_struct(struct task_ct_struct ** list){
 	i++;
     }
 }
+EXPORT_SYMBOL_GPL(make_task_ct_struct);
+
+//helper function for sysclock
+void make_task_ct_struct_per_cpu(struct task_ct_struct ** list,int cpu){
+
+    struct list_head * temp;
+    struct task_struct * curr;
+    int i = 0;
+    
+    *list = (struct task_ct_struct *) kmalloc(periodic_tasks_size * sizeof(struct task_ct_struct), GFP_KERNEL);
+	
+	list_for_each(temp, &(per_cpu_list[cpu])){
+	    curr = container_of(temp, struct task_struct, per_cpu_task);
+	    (*list)[i].budget = convert_to_usecs(curr->min_budget_time);
+	    (*list)[i].period = convert_to_usecs(curr->time_period);
+	    (*list)[i].task = curr;
+	    i++;
+	}
+}
+EXPORT_SYMBOL_GPL(make_task_ct_struct_per_cpu);
+
+
 
 //Function for the actual sysclock algorithm
 //It has to be called when the task list is locked
@@ -1446,6 +1476,77 @@ unsigned int apply_sysclock(unsigned long frequency, unsigned long max_frequency
     }
     return frequency;
 }
+
+//In case of bin packing applies 
+unsigned int apply_sysclock_per_cpu(unsigned long frequency, unsigned long max_frequency,int cpu){
+
+    struct list_head * temp;
+    struct task_struct * temp2;
+    struct task_struct * curr;
+    uint64_t updated_budget;
+    uint32_t max_freq = (uint32_t)max_frequency;
+    ktime_t p;
+
+
+    //Getting the next higher cpu 0 freq that is avaialable on the processor
+    frequency = get_table_frequency(0,frequency);
+
+    list_for_each(temp, &periodic_task_head){
+	curr = container_of(temp, struct task_struct, periodic_task);
+	updated_budget = (uint64_t)timespec_to_ns(&(curr->min_budget_time));
+	printk("Min Budget Time is %llu ns\n", (unsigned long long)updated_budget);
+	updated_budget *= (uint64_t)max_freq;
+	printk("Budget * Frequency is %llu ns\n", (unsigned long long)updated_budget);
+	__div64_32(&updated_budget, frequency);
+	printk("Budget * Frequency / Max Freq is %llu ns @ %lu kHz\n", (unsigned long long)updated_budget, frequency);
+
+	//Cancelling the budget timer of all tasks that were running 
+	if(hrtimer_try_to_cancel(&(curr->budget_timer)) == -1){ 
+	    printk("Budget timer for %u in apply_sysclock()\n", curr->pid);
+	}
+
+	//Cancelling the period timer for all tasks
+	if(hrtimer_try_to_cancel(&(curr->period_timer)) == -1){ 
+	    printk("Period timer for %u in apply_sysclock()\n", curr->pid);
+	}
+
+	//setting the compute times to zero
+	curr->compute_time.tv_sec = 0;
+	curr->compute_time.tv_nsec = 0;
+
+	curr->budget_time = ns_to_timespec(updated_budget);
+
+	//We should also wake-up all threads in a process
+	//in case they were sleeping. This is consistent with 
+	//our design of apply sysclock emulating the critical 
+	//instant
+	temp2 = curr;
+	do {
+	    if(wake_up_process(temp2)){
+		printk("Process was sleeping %d\n",temp2->pid);
+	    }
+	}while_each_thread(curr,temp2);
+
+
+    }
+
+    //Restarting the period timers for all the rt tasks
+    list_for_each(temp, &periodic_task_head){
+	curr = container_of(temp, struct task_struct, periodic_task);
+
+	p = timespec_to_ktime(curr->time_period);
+	if(hrtimer_start(&(curr->period_timer), p, HRTIMER_MODE_REL) == 1) {	
+	    printk("Could not restart period timer for task %d\n", curr->pid);
+	}
+    }
+    return frequency;
+
+}
+
+
+
+
+
 
 
 //It applies the sysclock frequency on the cpu as well as 
