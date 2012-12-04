@@ -662,6 +662,59 @@ int bin_packing(int scheme) {
 	}
     } else if(scheme == 3){
 
+	//Current bin set to one since we want to 
+	//optimize bins even in WFD
+	current_bins = 1; 
+	for(i = 0 ; i < periodic_tasks_size ; i++) {
+	    utilization = list[i].util;
+
+	    j = 0;
+	    binfound = 0;
+
+	    while (!binfound) {
+
+		//Iterate through current bins find current_bins -1 -jth Highest Util
+		best_fit_bin = get_util_bin(cpu_util ,(current_bins - 1) -j , current_bins); 
+
+		//Check for admission control
+		if(check_admission_per_cpu(list[i].budget,list[i].period, best_fit_bin) == 1) {
+		    //Set affinity
+		    printk("Best Fit Bin is %d\n", best_fit_bin);
+		    printk("Task with C = %ld is on bin %d\n",list[i].budget,(best_fit_bin + 1));
+
+		    //Setting the cpu in the task struct
+		    list[i].task->on_cpu = best_fit_bin;
+
+		    cpumask_set_cpu((best_fit_bin), &mask);
+
+		    if((ret_val = sched_setaffinity(list[i].task->pid , &mask))< 0){
+			printk("ERROR : COULD NOT SET AFFINITY \n");
+		    }
+
+
+		    cpu_util[best_fit_bin] -= utilization;
+		    add_task_to_cpu(&((list[i].task)->per_cpu_task), best_fit_bin);
+		    binfound = 1;
+		}
+		else {
+		    j++;
+		    if ( j == current_bins) {
+			current_bins++;
+		    }
+		    //No bins left
+		    if (current_bins > max_bins) {
+			return 0;
+		    }
+		}
+	    }
+
+	}
+    }
+    //Bonus WFD
+    else if(scheme == 4){
+
+	//Current bin set to one since we want to 
+	//optimize bins even in WFD
 	current_bins = 4; 
 	for(i = 0 ; i < periodic_tasks_size ; i++) {
 	    utilization = list[i].util;
@@ -679,15 +732,15 @@ int bin_packing(int scheme) {
 		    //Set affinity
 		    printk("Best Fit Bin is %d\n", best_fit_bin);
 		    printk("Task with C = %ld is on bin %d\n",list[i].budget,(best_fit_bin + 1));
-		    
+
 		    //Setting the cpu in the task struct
-			list[i].task->on_cpu = best_fit_bin;
+		    list[i].task->on_cpu = best_fit_bin;
 
-			cpumask_set_cpu((best_fit_bin), &mask);
+		    cpumask_set_cpu((best_fit_bin), &mask);
 
-			if((ret_val = sched_setaffinity(list[i].task->pid , &mask))< 0){
-			    printk("ERROR : COULD NOT SET AFFINITY \n");
-			}
+		    if((ret_val = sched_setaffinity(list[i].task->pid , &mask))< 0){
+			printk("ERROR : COULD NOT SET AFFINITY \n");
+		    }
 
 
 		    cpu_util[best_fit_bin] -= utilization;
@@ -1301,16 +1354,16 @@ void make_task_ct_struct_per_cpu(struct task_ct_struct ** list,int cpu){
     struct list_head * temp;
     struct task_struct * curr;
     int i = 0;
-    
+
     *list = (struct task_ct_struct *) kmalloc(per_cpu_list_size[cpu] * sizeof(struct task_ct_struct), GFP_KERNEL);
-	
-	list_for_each(temp, &(per_cpu_list[cpu])){
-	    curr = container_of(temp, struct task_struct, per_cpu_task);
-	    (*list)[i].budget = convert_to_usecs(curr->min_budget_time);
-	    (*list)[i].period = convert_to_usecs(curr->time_period);
-	    (*list)[i].task = curr;
-	    i++;
-	}
+
+    list_for_each(temp, &(per_cpu_list[cpu])){
+	curr = container_of(temp, struct task_struct, per_cpu_task);
+	(*list)[i].budget = convert_to_usecs(curr->min_budget_time);
+	(*list)[i].period = convert_to_usecs(curr->time_period);
+	(*list)[i].task = curr;
+	i++;
+    }
 }
 EXPORT_SYMBOL_GPL(make_task_ct_struct_per_cpu);
 
@@ -6034,47 +6087,47 @@ need_resched:
 		    }
 		}
 
+	    }
+	    else if (next->state != TASK_UNINTERRUPTIBLE){
+		//Else if budget is smaller (which should ideally never happen)
+		//send signal to process to be killed
+		printk("Budget exceeded for %d\n",next->pid);
+		//Since the budget has expired we add the task to its own wait queue
+		iterator = leader;
+		do {
+		    set_task_state(next, TASK_UNINTERRUPTIBLE);
+		    set_tsk_need_resched(next);
+		}while_each_thread(leader,iterator);
+	    }
+
+	    spin_unlock_irqrestore(&(leader->task_spin_lock),flagone);
 	}
-	else if (next->state != TASK_UNINTERRUPTIBLE){
-	    //Else if budget is smaller (which should ideally never happen)
-	    //send signal to process to be killed
-	    printk("Budget exceeded for %d\n",next->pid);
-	    //Since the budget has expired we add the task to its own wait queue
-	    iterator = leader;
-	    do {
-		set_task_state(next, TASK_UNINTERRUPTIBLE);
-		set_tsk_need_resched(next);
-	    }while_each_thread(leader,iterator);
+
+	//Logs the timestamp of the system
+	if(next->is_log_enabled == 1){
+	    leader = next->group_leader;
+	    spin_lock_irqsave(&(leader->task_spin_lock),flagone);
+	    log_data_point(leader, leader->exec_time);
+	    spin_unlock_irqrestore(&(leader->task_spin_lock),flagone);
 	}
 
-	spin_unlock_irqrestore(&(leader->task_spin_lock),flagone);
-    }
+	context_switch(rq, prev, next); /* unlocks the rq */
+	/*
+	 * The context switch have flipped the stack from under us
+	 * and restored the local variables which were saved when
+	 * this task called schedule() in the past. prev == current
+	 * is still correct, but it can be moved to another cpu/rq.
+	 */
+	cpu = smp_processor_id();
+	rq = cpu_rq(cpu);
+    } else
+	raw_spin_unlock_irq(&rq->lock);
 
-    //Logs the timestamp of the system
-    if(next->is_log_enabled == 1){
-	leader = next->group_leader;
-	spin_lock_irqsave(&(leader->task_spin_lock),flagone);
-	log_data_point(leader, leader->exec_time);
-	spin_unlock_irqrestore(&(leader->task_spin_lock),flagone);
-    }
+    post_schedule(rq);
 
-    context_switch(rq, prev, next); /* unlocks the rq */
-    /*
-     * The context switch have flipped the stack from under us
-     * and restored the local variables which were saved when
-     * this task called schedule() in the past. prev == current
-     * is still correct, but it can be moved to another cpu/rq.
-     */
-    cpu = smp_processor_id();
-    rq = cpu_rq(cpu);
-} else
-raw_spin_unlock_irq(&rq->lock);
-
-post_schedule(rq);
-
-preempt_enable_no_resched();
-if (need_resched())
-    goto need_resched;
+    preempt_enable_no_resched();
+    if (need_resched())
+	goto need_resched;
 
     if(flag == 1){
 	//Applying the PM clock frequency

@@ -54,7 +54,7 @@ asmlinkage int sys_startScheduling( void ) {
 
 		}
 
-		//set_rt_priorities_per_cpu(i);
+		set_rt_priorities_per_cpu(i);  //TODO : Why is this commented
 		//Getting max sysclock freq
 		make_task_ct_struct_per_cpu(&list,i);
 		sysclock_freq = sysclock_per_cpu(max_frequency, list, per_cpu_list_size[i]);
@@ -72,13 +72,13 @@ asmlinkage int sys_startScheduling( void ) {
 
 	write_unlock(&tasklist_lock);
 
-	//Setting CPU freq
-	lastcpupolicy->max = 1300000;
-	lastcpupolicy->min = 51000;
 	temp_freq = cpufreq_get(0);
 	printk("Global Sysclock : Current cpu freq before setting %d \n",temp_freq);
 	for(i = 0; i < 4; i++){
+	    //Setting CPU freq
 	    lastcpupolicy = cpufreq_cpu_get(i);
+	    lastcpupolicy->max = 1300000;  //TODO : Should this be in for loop after line 81 ?
+	    lastcpupolicy->min = 51000;
 	    if((ret_val = cpufreq_driver_target(lastcpupolicy,ret_freq,CPUFREQ_RELATION_L))<0){
 		printk("Error :Processor frequency wasn't set\n"); 
 	    }
